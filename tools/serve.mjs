@@ -6,7 +6,7 @@
  * window. Either way the files must go over HTTP — ES modules and the import
  * map will not load from a `file://` path.
  *
- *   node tools/serve.mjs [--port 5173] [--no-open]
+ *   node tools/serve.mjs [--port 5173] [--no-open] [--page feet.html]
  *
  * No dependencies, so there is nothing to install before the first run.
  */
@@ -118,7 +118,9 @@ if (runDirectly) {
   const { url, port, requested, close } = await startServer({
     port: Number(valueOf('--port', 5173)),
   });
-  const shown = `http://localhost:${port}`;
+  // `--page feet.html` opens a tool page instead of the rig itself.
+  const page = valueOf('--page', '');
+  const shown = `http://localhost:${port}${page ? '/' + String(page).replace(/^\//, '') : ''}`;
 
   process.stdout.write(
     `\n  \x1b[36mWHEELHOUSE\x1b[0m  stage 1 — environment & wheel\n` +
