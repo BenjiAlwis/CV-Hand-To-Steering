@@ -17,6 +17,9 @@ import { SteeringController } from './input/controller.js';
 import { PointerSource } from './input/pointer.js';
 import { KeyboardSource } from './input/keyboard.js';
 import { HandTracker } from './vision/handtracker.js';
+import { FootTracker } from './vision/foottracker.js';
+import { PedalSource } from './input/pedalsource.js';
+import { listCameras, loadAssignment, saveAssignment, resolveAssignment } from './vision/devices.js';
 import { HandTrackingSource } from './input/handsource.js';
 import { Shifter } from './input/shifter.js';
 import { CameraPanel } from './ui/camerapanel.js';
@@ -118,6 +121,8 @@ async function main() {
     onToggle: () => toggleCamera(),
     onRecalibrate: () => handSource.recalibrate(),
     onRatio: (step) => handSource.setRatio(handSource.ratio + step),
+    onAssign: (job, deviceId) => assignCamera(job, deviceId),
+    onZeroPedals: () => pedals.recalibrate(),
   });
 
   const tracker = new HandTracker({
@@ -134,6 +139,18 @@ async function main() {
   // hands, that beats a stale mouse drag or a held key.
   await controller.addSource(handSource);
 
+  /* ── camera foot tracking ──────────────────────────────────────────── */
+
+  const footFeed = document.getElementById('footFeed');
+  const footTracker = new FootTracker({
+    onStatus: ({ state, message }) => camera.setFootStatus(message, state),
+  });
+  const pedals = new PedalSource({ tracker: footTracker });
+
+  /** Seconds without a foot before the car goes back to driving itself. */
+  const FEET_HANDBACK = 4;
+  let feetLastSeen = null;
+
   /**
    * Gear flaps. A finger pull on either hand shifts, and the paddle on the
    * wheel is pulled to match so the gesture has something to answer it.
@@ -143,16 +160,55 @@ async function main() {
   };
   const shifter = new Shifter(handSource, { onShift: shift });
 
+  /**
+   * Works out which camera does which job.
+   *
+   * Device ids are only readable once camera permission is held, so this has
+   * to run after a stream has been opened at least once — before that every
+   * camera looks the same and looks nameless.
+   */
+  let assignment = { hands: null, feet: null };
+  async function refreshCameras() {
+    const { cameras, named } = await listCameras();
+    assignment = named
+      ? resolveAssignment(cameras, loadAssignment())
+      : { hands: null, feet: null };
+    camera.setDevices(cameras, assignment, named);
+    return { cameras, named };
+  }
+
+  /**
+   * Brings the foot camera up behind the hand camera.
+   *
+   * Deliberately not awaited by the caller. A phone acting as the foot camera
+   * takes about three seconds to wake — measured at 3.1s against 0.4s for a
+   * built-in lens — and there is no reason for steering to wait on pedals.
+   */
+  async function startFeet() {
+    if (!assignment.feet || footTracker.running) return;
+    try {
+      await footTracker.start(footFeed, assignment.feet);
+      pedals.recalibrate();
+    } catch {
+      /* the panel already carries the reason; steering is unaffected */
+    }
+  }
+
   async function toggleCamera(force) {
     if (cameraBusy) return;
     const want = force ?? !tracker.running;
     cameraBusy = true;
     try {
       if (want) {
-        await tracker.start(cameraFeed);
+        await tracker.start(cameraFeed, assignment.hands ?? undefined);
         camera.setEnabled(true);
+        // Now that permission is held the device list is readable, so a
+        // second camera can finally be told apart from the first.
+        await refreshCameras();
+        startFeet();
       } else {
         tracker.stop();
+        footTracker.stop();
         handSource.recalibrate();
         camera.setEnabled(false);
       }
@@ -161,6 +217,25 @@ async function main() {
     } finally {
       cameraBusy = false;
     }
+  }
+
+  /** Moves a job to a different camera and restarts just that tracker. */
+  async function assignCamera(job, deviceId) {
+    assignment = { ...assignment, [job]: deviceId };
+    // The same lens cannot serve both jobs, so the other one steps aside.
+    const other = job === 'hands' ? 'feet' : 'hands';
+    if (assignment[other] === deviceId) assignment[other] = null;
+    saveAssignment(assignment);
+
+    if (job === 'feet') {
+      footTracker.stop();
+      await startFeet();
+    } else if (tracker.running) {
+      tracker.stop();
+      await tracker.start(cameraFeed, assignment.hands ?? undefined);
+      handSource.recalibrate();
+    }
+    await refreshCameras();
   }
 
   app.renderer.shadowMap.needsUpdate = true;
@@ -181,10 +256,27 @@ async function main() {
     // After the steering source has read, so the named hands are current.
     shifter.update();
 
-    const telemetry = sim.update(dt, controller.normalised);
+    // Feet drive the car, but only once they have actually been seen.
+    //
+    // Handing the car over the moment the foot camera opens would park it:
+    // with no feet in frame the throttle reads zero, so the car would roll to
+    // a stop and sit there looking broken. It waits for a real reading, and
+    // hands back after a few seconds without one — long enough that crossing
+    // your legs or a foot passing out of frame does not bounce the car
+    // between being driven and driving itself.
+    let pedalInput = null;
+    if (footTracker.running) {
+      const read = pedals.read(dt);
+      if (pedals.state.tracking) feetLastSeen = elapsed;
+      if (feetLastSeen !== null && elapsed - feetLastSeen < FEET_HANDBACK) pedalInput = read;
+    } else {
+      feetLastSeen = null;
+    }
+    const telemetry = sim.update(dt, controller.normalised, pedalInput);
     rig.wheel.update(dt, telemetry);
     environment.update(dt, elapsed);
     camera.draw(cameraFeed, tracker, handSource, shifter);
+    camera.drawFeet(footFeed, footTracker, pedals);
 
     hud.update(dt, {
       controller,
@@ -215,7 +307,10 @@ async function main() {
   }
 
   // Handy from the console while iterating.
-  Object.assign(window, { app, rig, controller, sim, environment, tracker, handSource, shifter });
+  Object.assign(window, {
+    app, rig, controller, sim, environment, tracker, handSource, shifter,
+    footTracker, pedals, assignCamera, refreshCameras,
+  });
   Object.defineProperty(window, 'wheel', { get: () => rig.wheel, configurable: true });
 
   // The surface the desktop shell's menu drives. Kept separate from the

@@ -10,7 +10,7 @@
  * it runs on the raw frame; only this preview is flipped.
  */
 export class CameraPanel {
-  constructor({ onToggle, onRecalibrate, onRatio }) {
+  constructor({ onToggle, onRecalibrate, onRatio, onAssign, onZeroPedals }) {
     this.root = document.getElementById('camera');
     this.canvas = document.getElementById('cameraCanvas');
     this.ctx = this.canvas.getContext('2d');
@@ -31,8 +31,147 @@ export class CameraPanel {
     this.button.addEventListener('click', () => onToggle());
     document.getElementById('cameraZero').addEventListener('click', () => onRecalibrate());
 
+    /* the foot half */
+    this.footRoot = document.getElementById('footPanel');
+    this.footCanvas = document.getElementById('footCanvas');
+    this.footCtx = this.footCanvas.getContext('2d');
+    this.footStatusEl = document.getElementById('footStatus');
+    this.footHintEl = document.getElementById('footHint');
+    this.footPipeEl = document.getElementById('footPipeline');
+    this.pedalBars = {
+      throttle: document.getElementById('pedalThrottle'),
+      brake: document.getElementById('pedalBrake'),
+    };
+    this.pedalValues = {
+      throttle: document.getElementById('pedalThrottleValue'),
+      brake: document.getElementById('pedalBrakeValue'),
+    };
+    document.getElementById('pedalZero').addEventListener('click', () => onZeroPedals?.());
+
+    this.picks = {
+      hands: document.getElementById('handsCamera'),
+      feet: document.getElementById('feetCamera'),
+    };
+    for (const [job, el] of Object.entries(this.picks)) {
+      el.addEventListener('change', () => onAssign?.(job, el.value || null));
+    }
+
     this.enabled = false;
     this.sticky = false;
+    this.footSticky = false;
+  }
+
+  /**
+   * Fills the two camera pickers.
+   *
+   * When `named` is false the browser is withholding device identities, so
+   * the list cannot tell one camera from another — say that rather than
+   * offering a choice that would not mean anything.
+   */
+  setDevices(cameras, assignment, named) {
+    for (const [job, el] of Object.entries(this.picks)) {
+      el.innerHTML = '';
+      if (!named) {
+        el.append(new Option('camera not identified', ''));
+        el.disabled = true;
+        continue;
+      }
+      el.disabled = false;
+      if (job === 'feet') el.append(new Option('none', ''));
+      for (const cam of cameras) {
+        // A long USB name would blow the panel out; the tail is the useful half.
+        const label = cam.label.length > 26 ? `…${cam.label.slice(-25)}` : cam.label;
+        el.append(new Option(label, cam.deviceId));
+      }
+      el.value = assignment?.[job] ?? '';
+    }
+  }
+
+  setFootStatus(message, state = 'idle') {
+    const tone = state === 'error' ? 'error'
+      : state === 'loading' || state === 'opening' ? 'busy'
+      : state === 'off' ? 'idle' : 'live';
+    this.footStatusEl.textContent = message;
+    this.footStatusEl.dataset.tone = tone;
+    this.footSticky = tone === 'error' || tone === 'busy';
+  }
+
+  /**
+   * The pedal half of the panel: the foot camera's view, the two ankles and
+   * feet the pose model found, and how far each pedal is being pressed.
+   *
+   * Seeing the skeleton matters as much here as it does for hands — a pedal
+   * that will not move is almost always a foot the model cannot see, and
+   * that is obvious the moment you can watch it being tracked.
+   */
+  drawFeet(video, tracker, pedals) {
+    const live = !!tracker?.running;
+    this.footRoot.classList.toggle('live', live);
+
+    for (const which of ['throttle', 'brake']) {
+      const v = pedals?.state?.[which]?.value ?? 0;
+      this.pedalBars[which].style.width = `${Math.round(v * 100)}%`;
+      this.pedalBars[which].classList.toggle('pressed', v > 0.02);
+      this.pedalValues[which].textContent = `${Math.round(v * 100)}%`;
+    }
+
+    const ctx = this.footCtx;
+    const { width: w, height: h } = this.footCanvas;
+    ctx.clearRect(0, 0, w, h);
+    if (!live || !video || video.readyState < 2) {
+      if (!this.footSticky) this.setFootStatus(live ? 'looking for your feet…' : 'no foot camera', live ? 'live' : 'idle');
+      return;
+    }
+
+    // Mirrored to read like a mirror, exactly as the hand feed is. The maths
+    // behind it runs on the raw frame; only this preview is flipped.
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    const scale = Math.max(w / video.videoWidth, h / video.videoHeight);
+    const dw = video.videoWidth * scale, dh = video.videoHeight * scale;
+    ctx.globalAlpha = 0.78;
+    ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    ctx.globalAlpha = 1;
+
+    const feet = tracker.latest;
+    for (const [side, tone] of [['right', '#2fe07a'], ['left', '#ff6a3d']]) {
+      const foot = feet?.[side];
+      if (!foot) continue;
+      const faded = foot.visibility < 0.55;
+      ctx.globalAlpha = faded ? 0.3 : 1;
+      ctx.strokeStyle = tone;
+      ctx.fillStyle = tone;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(foot.ankle.x * w, foot.ankle.y * h);
+      ctx.lineTo(foot.heel.x * w, foot.heel.y * h);
+      ctx.lineTo(foot.toe.x * w, foot.toe.y * h);
+      ctx.stroke();
+      for (const pt of [foot.ankle, foot.heel, foot.toe]) {
+        ctx.beginPath();
+        ctx.arc(pt.x * w, pt.y * h, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    if (!this.footSticky) {
+      const seen = [pedals?.state?.throttle?.seen, pedals?.state?.brake?.seen];
+      const n = seen.filter(Boolean).length;
+      this.setFootStatus(
+        n === 2 ? 'both feet tracking' : n === 1 ? 'one foot tracking' : 'looking for your feet…',
+        n ? 'live' : 'busy',
+      );
+    }
+    this.footHintEl.textContent = pedals?.state?.throttle?.seen || pedals?.state?.brake?.seen
+      ? 'heels down, pivot at the ankle'
+      : 'right foot throttle, left foot brake';
+    if (tracker.settings) {
+      this.footPipeEl.textContent =
+        `${tracker.settings.width}×${tracker.settings.height} · ${tracker.fps}fps · ${tracker.inferenceMs.toFixed(0)}ms`;
+    }
   }
 
   setEnabled(on) {

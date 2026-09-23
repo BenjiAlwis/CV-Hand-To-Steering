@@ -15,6 +15,17 @@ const RATIOS = [
 const RPM_MAX = 15000;
 const RPM_IDLE = 4200;
 
+/**
+ * km/h per second at full throttle in the meat of a gear, and under braking.
+ * Braking dwarfs power because it does in the car: carbon discs pull about
+ * 5g, which is roughly 175 km/h of speed shed every second.
+ */
+const ACCEL_MAX = 70;
+const BRAKE_MAX = 190;
+/** Where power runs out, and what the air costs. Together these set top speed. */
+const POWER_FADE = 380;
+const DRAG_K = 0.00012;
+
 export class CarSim {
   constructor() {
     this.speed = 0;          // km/h
@@ -35,22 +46,68 @@ export class CarSim {
     this._manualHold = 0;
     /** +1 or -1 on the frame a shift lands, for the overlay to flash. */
     this.lastShift = 0;
+    /** What the feet are asking for, 0…1, and whether they are asking at all. */
+    this.throttle = 0;
+    this.brake = 0;
+    this.driven = false;
   }
 
   /**
    * @param {number} dt
    * @param {number} steer  −1 … +1
+   * @param {{throttle: number, brake: number}} [pedals]
+   *   When the foot camera is tracking, the car is driven. When it is not,
+   *   pass nothing: the car drives itself as it always did, so the rig still
+   *   works on one camera and the instruments still have something to show.
    */
-  update(dt, steer) {
+  update(dt, steer, pedals = null) {
     const load = Math.min(1, Math.abs(steer));
 
     // Cornering scrubs speed: the more lock, the lower the ceiling.
     const ceiling = 330 * (1 - 0.66 * Math.pow(load, 1.25));
-    const gap = ceiling - this.speed;
-    // Power-limited acceleration, but braking is far stronger.
-    const rate = gap > 0 ? 34 * (1 - this.speed / 360) : 96;
-    this.speed += Math.sign(gap) * Math.min(Math.abs(gap), Math.abs(rate) * dt) ;
-    this.speed = Math.max(0, this.speed);
+
+    if (pedals) {
+      this.throttle = clamp(pedals.throttle ?? 0, 0, 1);
+      this.brake = clamp(pedals.brake ?? 0, 0, 1);
+      this.driven = true;
+
+      // Power falls away with speed — a car gains far less at 300 than at 100 —
+      // and the gear the driver is in sets how much of it reaches the road.
+      const band = RATIOS[this.gear - 1];
+      const reach = this.speed / Math.max(1, band.top);
+      // Short gears pull harder. Eighth at 40 km/h bogs, first at its limiter
+      // has nothing left, and both of those should be felt.
+      const pull = 1.35 - 0.5 * clamp(reach, 0, 1.4);
+      // Traction, which is what actually limits a car off the line. An F1
+      // car cannot use its power below about 80 km/h because it has not yet
+      // made the downforce to put it down — so this ramps in with speed
+      // rather than being available from rest.
+      const traction = 0.42 + 0.58 * clamp(this.speed / 80, 0, 1);
+      const power = ACCEL_MAX * this.throttle * pull * traction
+        * Math.max(0, 1 - this.speed / POWER_FADE);
+
+      // Brakes outrank the engine by a long way, as carbon discs do.
+      const braking = BRAKE_MAX * this.brake;
+
+      // Drag, plus the scrub that cornering costs. Above the ceiling the tyres
+      // are past what the corner will take and the car washes off speed
+      // whatever the driver's right foot is asking for.
+      const drag = DRAG_K * this.speed * this.speed + 1.5;
+      const over = Math.max(0, this.speed - ceiling);
+      const scrub = over * 2.6;
+
+      this.speed += (power - braking - drag - scrub) * dt;
+      this.speed = clamp(this.speed, 0, 360);
+    } else {
+      this.throttle = 0;
+      this.brake = 0;
+      this.driven = false;
+      const gap = ceiling - this.speed;
+      // Power-limited acceleration, but braking is far stronger.
+      const rate = gap > 0 ? 34 * (1 - this.speed / 360) : 96;
+      this.speed += Math.sign(gap) * Math.min(Math.abs(gap), Math.abs(rate) * dt) ;
+      this.speed = Math.max(0, this.speed);
+    }
 
     // Gearbox.
     this._shiftCooldown = Math.max(0, this._shiftCooldown - dt);
@@ -134,6 +191,9 @@ export class CarSim {
       flag: this.flag,
       lastShift: this.lastShift,
       manual: this._manualHold > 0,
+      throttle: this.throttle,
+      brake: this.brake,
+      driven: this.driven,
     };
   }
 }

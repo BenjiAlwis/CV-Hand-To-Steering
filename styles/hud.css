@@ -68,6 +68,26 @@ body{
 .corr-row.ratio button:hover{background:rgba(255,255,255,.14)}
 .corr-row.ratio{margin-top:2px}
 
+/* ── pedals ─────────────────────────────────────────── */
+.pedal-row{display:flex;align-items:center;gap:7px;margin-top:9px}
+.pedal-row span{font-size:9px;letter-spacing:.2em;color:var(--dim);width:24px}
+.pedal-row b{font-size:9px;color:var(--dim);width:30px;text-align:right;font-variant-numeric:tabular-nums}
+.pedal-track{flex:1;height:7px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
+.pedal-track i{display:block;height:100%;width:0;background:#2fe07a;transition:width .05s linear}
+.pedal-track i.pressed{box-shadow:0 0 9px currentColor;color:#2fe07a}
+.pedal-track.brake i{background:#ff6a3d}
+.pedal-track.brake i.pressed{color:#ff6a3d}
+
+/* Which lens does which job. Kept quiet — it is set once and then ignored. */
+.cam-pick{display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:11px}
+.cam-pick label{font-size:9px;letter-spacing:.2em;color:var(--dim)}
+.cam-pick select{
+  width:100%;min-width:0;font:inherit;font-size:10px;color:#c8d2de;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  border-radius:5px;padding:3px 5px;
+}
+.cam-pick select:disabled{opacity:.4}
+
 .cam-buttons{display:flex;gap:7px;margin-top:11px}
 .cam-buttons button{
   flex:1;font:inherit;font-size:10px;letter-spacing:.12em;

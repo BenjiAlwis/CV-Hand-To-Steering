@@ -24,6 +24,7 @@
 <body>
   <canvas id="stage"></canvas>
   <video id="cameraFeed" playsinline muted></video>
+  <video id="footFeed" playsinline muted></video>
   <div id="titlebar" aria-hidden="true"><span>WHEELHOUSE</span></div>
 
   <div id="boot">
@@ -137,6 +138,34 @@
         <div class="cam-buttons">
           <button id="cameraToggle" type="button">Stop camera</button>
           <button id="cameraZero" type="button">Set level</button>
+        </div>
+
+        <div class="cam-pick">
+          <label for="handsCamera">HANDS</label>
+          <select id="handsCamera"></select>
+          <label for="feetCamera">FEET</label>
+          <select id="feetCamera"></select>
+        </div>
+      </div>
+
+      <div class="panel camera foot" id="footPanel">
+        <div class="panel-title">PEDALS</div>
+        <canvas id="footCanvas" width="320" height="180"></canvas>
+        <div class="cam-status" id="footStatus" data-tone="idle">no foot camera</div>
+        <div class="pedal-row">
+          <span>THR</span>
+          <div class="pedal-track"><i id="pedalThrottle"></i></div>
+          <b id="pedalThrottleValue">0%</b>
+        </div>
+        <div class="pedal-row">
+          <span>BRK</span>
+          <div class="pedal-track brake"><i id="pedalBrake"></i></div>
+          <b id="pedalBrakeValue">0%</b>
+        </div>
+        <div class="cam-hint" id="footHint">right foot throttle, left foot brake</div>
+        <div class="cam-pipe" id="footPipeline"></div>
+        <div class="cam-buttons">
+          <button id="pedalZero" type="button">Zero pedals</button>
         </div>
       </div>
     </div>
