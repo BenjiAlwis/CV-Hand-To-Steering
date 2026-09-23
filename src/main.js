@@ -30,10 +30,20 @@ if (new URLSearchParams(location.search).get('shell') === 'desktop') {
 
 const boot = document.getElementById('boot');
 const bootMsg = boot.querySelector('.boot-msg');
+const bootPips = [...boot.querySelectorAll('.pip')];
 
-/** Yields to the browser so the boot screen can actually paint between steps. */
+/**
+ * Yields to the browser so the boot screen can actually paint between steps,
+ * and lights the mark's rev pips as it goes — the loading bar is the wheel's
+ * own light strip.
+ */
+const STEPS = 5;
+let stepsDone = 0;
 const step = async (message) => {
   bootMsg.textContent = message;
+  stepsDone += 1;
+  const lit = Math.round((stepsDone / STEPS) * bootPips.length);
+  bootPips.forEach((pip, i) => pip.classList.toggle('lit', i < lit));
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 };
 
@@ -243,6 +253,9 @@ function bindKeys(app, controller, hud, cycleTeam, vision) {
 
 main().catch((error) => {
   console.error(error);
+  boot.classList.add('failed');
   bootMsg.textContent = `failed: ${error.message}`;
   bootMsg.style.color = '#ff6a5a';
+  bootMsg.style.textTransform = 'none';
+  bootMsg.style.letterSpacing = '0.04em';
 });
