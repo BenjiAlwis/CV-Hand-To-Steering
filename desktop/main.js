@@ -32,11 +32,23 @@ async function createWindow() {
     // The page is our own, served from loopback, and the only capability it
     // asks for is the camera the hand tracker runs on. Everything else is
     // refused rather than left to the default.
+    //
+    // Compare parsed origins rather than the strings. Electron hands the check
+    // handler a serialised origin with a trailing slash —
+    // "http://127.0.0.1:5173/" — while URL.origin has none, so a `===` between
+    // them is never true. Capture still worked, because that goes through the
+    // request handler below, but every permission *check* came back false: the
+    // Permissions API reported the camera as denied, and Chromium answers
+    // enumerateDevices() with anonymous placeholders when it is. The app could
+    // therefore never see which cameras existed, or tell one from another.
+    const sameOrigin = (url) => {
+      try { return new URL(url).origin === origin; } catch { return false; }
+    };
     session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
-      callback(contents.getURL().startsWith(origin) && permission === 'media');
+      callback(sameOrigin(contents.getURL()) && permission === 'media');
     });
     session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-      requestingOrigin === origin && permission === 'media');
+      sameOrigin(requestingOrigin) && permission === 'media');
 
     win = new BrowserWindow({
       width: 1480,
