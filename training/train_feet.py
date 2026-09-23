@@ -189,7 +189,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="dataset/openimages")
     ap.add_argument("--epochs", type=int, default=20)
-    ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--lr", type=float, default=0.005)
     ap.add_argument("--out", default="training/runs/feet")
     ap.add_argument("--separate-classes", action="store_true")
@@ -204,10 +205,15 @@ def main():
     print(f"  {len(train_set)} training images, {len(val_set)} for validation")
     print(f"  {num_classes - 1} class(es), on {device}\n")
 
+    # Frugal on purpose. An earlier run with four persistent workers on each
+    # loader drove a 34GB machine into swap — epochs went from 21 seconds to
+    # 905, a forty-fold slowdown that looks exactly like a training problem
+    # and is not one. Workers hold decoded images, and six of them alongside
+    # an editor and a browser is more than this has to spare.
     train_loader = DataLoader(train_set, batch_size=args.batch, shuffle=True,
-                              collate_fn=collate, num_workers=4, persistent_workers=True)
+                              collate_fn=collate, num_workers=args.workers)
     val_loader = DataLoader(val_set, batch_size=args.batch, shuffle=False,
-                            collate_fn=collate, num_workers=2, persistent_workers=True)
+                            collate_fn=collate, num_workers=0)
 
     model = build(num_classes).to(device)
     params = [p for p in model.parameters() if p.requires_grad]
@@ -242,14 +248,18 @@ def main():
         print(f"\r  epoch {epoch}/{args.epochs}  loss {total / len(train_loader):.3f}  "
               f"recall {recall:.3f}  precision {precision:.3f}  ({time.time() - started:.0f}s)")
 
-        score = recall
+        # F1, not recall. Recall alone is maximised by a model that boxes
+        # everything, and selecting on it kept an epoch-1 checkpoint scoring
+        # 0.499 recall at 0.014 precision — a detector that says "foot" to the
+        # whole picture and is right often enough to look good on one number.
+        score = 0.0 if recall + precision == 0 else 2 * recall * precision / (recall + precision)
         if score >= best:
             best = score
             torch.save({"model": model.state_dict(), "classes": train_set.classes,
-                        "recall": recall, "precision": precision, "epoch": epoch},
+                        "recall": recall, "precision": precision, "f1": score, "epoch": epoch},
                        os.path.join(args.out, "best.pt"))
 
-    print(f"\n  best recall {best:.3f} — {args.out}/best.pt\n")
+    print(f"\n  best F1 {best:.3f} — {args.out}/best.pt\n")
 
 
 if __name__ == "__main__":
