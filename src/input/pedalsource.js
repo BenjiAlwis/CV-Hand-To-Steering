@@ -27,11 +27,33 @@ export class PedalSource {
    *                                    changes nothing at all
    * @param {number} [o.releaseMs]     how long the fall to 0 then takes
    */
-  constructor({ tracker, minVisibility = 0.55, staleMs = 260,
-                graceMs = 120, releaseMs = 180 } = {}) {
+  constructor({ tracker, minVisibility = 0.30, staleMs = 260,
+                graceMs = 120, releaseMs = 180, maxRate = 7 } = {}) {
     this.name = 'pedals';
     this.tracker = tracker;
+    /**
+     * How sure the model must be that it is looking at a real foot.
+     *
+     * Measured rather than chosen: a foot plainly in shot scores 0.6-0.8, one
+     * the model is extrapolating from a body it can see scores 0.11-0.24, and
+     * a foot at the edge of a close camera lands anywhere between. The two
+     * bands overlap, so no threshold separates them cleanly — this one is set
+     * low enough to keep the marginal readings, and `maxRate` below is what
+     * actually throws out the bad ones.
+     */
     this.minVisibility = minVisibility;
+    /**
+     * The largest believable ankle pivot, in radians per second.
+     *
+     * Visibility says how sure the model is; this says whether the answer is
+     * physically possible. A half-occluded foot throws its landmarks across
+     * the frame, and measured on a real camera the reported pitch swung 134°
+     * in a run where the foot moved perhaps 30 — jumps no ankle can make. An
+     * impossible step is dropped and the last good reading held, which is the
+     * same treatment a missing foot gets, and it lets the visibility gate be
+     * generous without letting nonsense through.
+     */
+    this.maxRate = maxRate;
     this.staleMs = staleMs;
     this.graceMs = graceMs;
     this.releaseMs = releaseMs;
@@ -47,8 +69,8 @@ export class PedalSource {
 
     /** Per-pedal detail for the HUD. */
     this.state = {
-      throttle: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0 },
-      brake: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0 },
+      throttle: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0, rejected: 0 },
+      brake: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0, rejected: 0 },
       tracking: false,
     };
   }
@@ -79,7 +101,18 @@ export class PedalSource {
   _pedal(which, foot, captureAt, dt) {
     const s = this.state[which];
     const cal = this.calibrators[which];
-    const believable = foot && foot.visibility >= this.minVisibility;
+    let believable = foot && foot.visibility >= this.minVisibility;
+
+    // A step no ankle could take is a landmark that jumped, not a foot that
+    // moved. Only checked against a foot we were already following: the first
+    // reading after one comes back is a jump by definition.
+    if (believable && s.seen) {
+      const step = Math.abs(foot.pitch - s.pitch);
+      if (step > this.maxRate * Math.max(dt, 1 / 120)) {
+        believable = false;
+        s.rejected++;
+      }
+    }
 
     if (!believable) {
       // Hold, then ease out. A pedal that starts falling on the first frame it

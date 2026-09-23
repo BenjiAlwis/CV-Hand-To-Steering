@@ -98,6 +98,38 @@ console.log('\npedal calibration');
   ok('a pedal held for ten seconds does not bleed off', held > 0.75, held.toFixed(3));
 }
 
+// Measured against a real foot camera: a foot that is plainly in shot scores
+// around 0.6-0.8, not the 0.9+ a full-body pose gives, while a foot the model
+// is merely extrapolating scores under 0.25. The gate has to sit between those
+// two bands, and it used to sit on top of the lower edge of the upper one.
+console.log('\nsurviving a bad landmark');
+{
+  const cal = new PedalCalibrator();
+  let t = 0;
+  const feed = (pitchDeg, seconds = 0.5) => {
+    let v = 0;
+    for (let i = 0; i < Math.round(seconds * 60); i++) { t += 1 / 60; v = cal.update((pitchDeg * Math.PI) / 180, t); }
+    return v;
+  };
+  feed(8, 1.0);
+  feed(-14, 0.8);
+  feed(8, 0.6);
+
+  // A half-occluded foot throws a landmark across the frame for a frame or two.
+  t += 1 / 60;
+  cal.update((-130 * Math.PI) / 180, t);
+  ok('an absurd reading cannot stretch travel past the cap',
+    cal.travel <= cal.maxTravel + 1e-9, cal.travel.toFixed(2));
+
+  feed(8, 1.0);
+  const after = feed(-14, 0.8);
+  ok('and a normal press still opens the pedal afterwards', after > 0.4, after.toFixed(2));
+
+  feed(8, 3.0);
+  ok('travel eases back toward the default when it is not needed',
+    cal.travel < 0.66, cal.travel.toFixed(3));
+}
+
 console.log('\nthrottle and brake');
 {
   const tracker = { latest: null, running: true };
@@ -140,10 +172,35 @@ console.log('\nthrottle and brake');
   ok('a foot gone for good closes the throttle', pedals.throttle === 0, pedals.throttle.toFixed(3));
   ok('and the panel knows it is not seeing it', pedals.state.throttle.seen === false);
 
-  // An unbelievable reading is the same as no reading.
+  // An unbelievable reading is the same as no reading. The two bands either
+  // side of the gate are measured, not invented: feet plainly in shot came
+  // back at 0.63-0.82, feet merely extrapolated at 0.11-0.24.
   post(-14, -14, { visibility: 0.2 }); run(0.5);
-  ok('a foot the model is unsure about is not trusted',
+  ok('a foot the model is only extrapolating is not trusted',
     pedals.throttle === 0 && pedals.brake === 0);
+
+  post(8, 8, { visibility: 0.62 }); run(1);
+  post(-14, 8, { visibility: 0.62 }); run(0.8);
+  ok('a foot plainly in shot at 0.62 is trusted', pedals.throttle > 0.8, pedals.throttle.toFixed(2));
+
+  // A landmark that jumps across the frame is not a foot that moved.
+  post(8, 8); run(1);
+  const steady = pedals.throttle;
+  post(-130, 8);                       // one impossible frame
+  const spiked = pedals.read(dt).throttle;
+  ok('an impossible jump is ignored rather than driven',
+    Math.abs(spiked - steady) < 0.05, `${steady.toFixed(2)} → ${spiked.toFixed(2)}`);
+  ok('and it is counted as rejected', pedals.state.throttle.rejected > 0);
+
+  post(-14, 8); run(0.8);
+  ok('a real press still gets through after a rejected one', pedals.throttle > 0.7,
+    pedals.throttle.toFixed(2));
+
+  // Marginal framing: the band a close foot camera actually produces.
+  post(8, 8, { visibility: 0.34 }); run(1);
+  post(-14, 8, { visibility: 0.34 }); run(0.8);
+  ok('a foot at 0.34 visibility still steers the pedal', pedals.throttle > 0.7,
+    pedals.throttle.toFixed(2));
 
   // One foot out of frame must not take the other with it.
   post(8, 8); run(1); post(-14, null); run(0.8);

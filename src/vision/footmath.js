@@ -86,10 +86,24 @@ export class PedalCalibrator {
    * @param {number} o.deadzone  fraction of travel ignored at the top, so a
    *                             foot resting naturally reads as exactly zero
    */
-  constructor({ travel = 0.35, minTravel = 0.16, deadzone = 0.12,
-                restRise = 6.0, restFall = 0.05, filter } = {}) {
+  constructor({ travel = 0.35, minTravel = 0.16, maxTravel = 0.70, travelDecay = 0.06,
+                deadzone = 0.12, restRise = 6.0, restFall = 0.05, filter } = {}) {
     this.initialTravel = travel;
     this.minTravel = minTravel;
+    /**
+     * A ceiling on learned travel, and a slow pull back toward the default.
+     *
+     * Travel grows to fit the driver, which is what makes the first firm press
+     * calibrate the pedal — but growing only, with no ceiling, means one bad
+     * frame sets it forever. Measured on a real foot camera, pitch swung 134°
+     * across fifteen seconds where the foot itself moved perhaps 30: landmarks
+     * jump when a foot is half occluded. A single spike like that would have
+     * demanded a 134° press from then on, which is to say the pedal would
+     * never open again. So travel is capped at a press no ankle makes, and
+     * eases back toward the default when it is not being used.
+     */
+    this.maxTravel = maxTravel;
+    this.travelDecay = travelDecay;
     this.deadzone = deadzone;
     this.restRise = restRise;
     this.restFall = restFall;
@@ -136,8 +150,9 @@ export class PedalCalibrator {
     this.rest += (p - this.rest) * clamp(rate * dt, 0, 1);
 
     const below = this.rest - p;
-    if (below > this.travel) this.travel = below;       // a firmer press than we knew
-    const span = Math.max(this.minTravel, this.travel);
+    if (below > this.travel) this.travel = Math.min(below, this.maxTravel);
+    else this.travel += (this.initialTravel - this.travel) * clamp(this.travelDecay * dt, 0, 1);
+    const span = clamp(this.travel, this.minTravel, this.maxTravel);
 
     const raw = clamp(below / span, 0, 1);
     // The deadzone is taken off the top and the rest rescaled, so the pedal

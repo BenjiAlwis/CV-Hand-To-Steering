@@ -123,17 +123,29 @@ export class CameraPanel {
     ctx.globalAlpha = 1;
     ctx.restore();
 
+    // Say which of the two failures this is. "Looking for your feet" covers
+    // both "there is nobody in this picture" and "I can see you but your feet
+    // are not in the frame", and they need opposite things done about them —
+    // so the panel reports the model's own confidence in each foot rather
+    // than hiding it behind one message.
     if (!this.footSticky) {
-      const seen = [pedals?.state?.throttle?.seen, pedals?.state?.brake?.seen];
-      const n = seen.filter(Boolean).length;
+      const t = pedals?.state?.throttle, br = pedals?.state?.brake;
+      const n = [t?.seen, br?.seen].filter(Boolean).length;
+      const best = Math.max(t?.visibility ?? 0, br?.visibility ?? 0);
       this.setFootStatus(
-        n === 2 ? 'both feet tracking' : n === 1 ? 'one foot tracking' : 'looking for your feet…',
+        n === 2 ? 'both feet tracking'
+          : n === 1 ? 'one foot tracking'
+            : !tracker.sawPerson ? 'nobody in the foot camera'
+              : `feet not clear enough (${Math.round(best * 100)}%)`,
         n ? 'live' : 'busy',
       );
     }
-    this.footHintEl.textContent = pedals?.state?.throttle?.seen || pedals?.state?.brake?.seen
-      ? 'heels down, pivot at the ankle'
-      : 'right foot throttle, left foot brake';
+    const t = pedals?.state?.throttle, br = pedals?.state?.brake;
+    this.footHintEl.textContent = t?.seen || br?.seen
+      ? `heels down, pivot at the ankle · R ${Math.round((t?.visibility ?? 0) * 100)}% L ${Math.round((br?.visibility ?? 0) * 100)}%`
+      : tracker.sawPerson
+        ? 'move the camera back until your shins are in shot — it finds feet by finding you'
+        : 'right foot throttle, left foot brake';
     if (tracker.settings) {
       this.footPipeEl.textContent =
         `${tracker.settings.width}×${tracker.settings.height} · ${tracker.fps}fps · ${tracker.inferenceMs.toFixed(0)}ms`;

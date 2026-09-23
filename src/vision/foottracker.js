@@ -16,10 +16,25 @@ import { footMetrics } from './footmath.js';
 import { CameraCapture } from './capture.js';
 
 const WASM_PATH = '/node_modules/@mediapipe/tasks-vision/wasm';
-const MODEL_PATH = '/assets/models/pose_landmarker_lite.task';
+/**
+ * `full` rather than `lite`, which is the difference between a foot camera
+ * that works and one that mostly does not.
+ *
+ * The pose graph finds a *person* before it finds any landmark, so a camera
+ * showing only feet gives it very little to go on — which is exactly why
+ * tracking improved when the feet were further away and more of the body was
+ * in shot. `full` is markedly better at a partial body, and the extra
+ * milliseconds are affordable here because the feet run at a fraction of the
+ * hand tracker's rate.
+ */
+const MODELS = {
+  lite: '/assets/models/pose_landmarker_lite.task',
+  full: '/assets/models/pose_landmarker_full.task',
+};
 
 export class FootTracker {
-  constructor({ onStatus, capture, confidence, minIntervalMs = 48 } = {}) {
+  constructor({ onStatus, capture, confidence, minIntervalMs = 40, model = 'full' } = {}) {
+    this.modelPath = MODELS[model] ?? MODELS.full;
     this.onStatus = onStatus ?? (() => {});
     /**
      * Floor on the gap between inferences, in milliseconds.
@@ -33,7 +48,12 @@ export class FootTracker {
      */
     this.minIntervalMs = minIntervalMs;
     this._lastDetect = 0;
-    this.confidence = { detect: 0.4, presence: 0.4, track: 0.4, ...confidence };
+    // Low on purpose. A foot camera sees a fraction of a person, so the
+    // detector is never confident — hold it to the confidence you would want
+    // from a full-body shot and it simply never fires. What a loose threshold
+    // lets through is filtered afterwards by landmark visibility, which is
+    // the honest measure of whether a foot was actually seen.
+    this.confidence = { detect: 0.2, presence: 0.2, track: 0.2, ...confidence };
     this.landmarker = null;
 
     /** @type {{left: object|null, right: object|null, at: number, captureAt: number} | null} */
@@ -65,7 +85,7 @@ export class FootTracker {
     this.onStatus({ state: 'loading', message: 'loading pose model…' });
     const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
     this.landmarker = await PoseLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: MODEL_PATH, delegate: 'GPU' },
+      baseOptions: { modelAssetPath: this.modelPath, delegate: 'GPU' },
       runningMode: 'VIDEO',
       numPoses: 1,
       minPoseDetectionConfidence: this.confidence.detect,
@@ -100,6 +120,8 @@ export class FootTracker {
     this.inferenceMs += (performance.now() - began - this.inferenceMs) * 0.1;
 
     const lm = result?.landmarks?.[0] ?? null;
+    /** Whether a person was found at all, as opposed to found without feet. */
+    this.sawPerson = !!lm;
     this.latest = {
       left: lm ? footMetrics(lm, 'left') : null,
       right: lm ? footMetrics(lm, 'right') : null,
