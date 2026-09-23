@@ -75,7 +75,7 @@ function build() {
 const { d, pips, W, H } = build();
 
 const fragment = `<svg class="mark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Wheelhouse">
-  <path class="mark-shell" pathLength="1" d="${d}"/>
+  <path class="mark-shell" d="${d}"/>
 ${pips.map((p) => `  <rect class="pip" data-tone="${p.tone}" data-i="${p.i}" x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" rx="${round(p.w * 0.28)}"/>`).join('\n')}
 </svg>`;
 
@@ -121,7 +121,7 @@ if (process.argv.includes('--preview')) {
 <div style="display:flex;align-items:flex-end;gap:56px">
   ${[220, 96, 48, 24].map((size) => `<div style="width:${size}px">${fragment
     .replace('class="mark"', 'style="width:100%;height:auto;overflow:visible"')
-    .replace(/class="mark-shell" pathLength="1"/, 'fill="#12161d" stroke="#4dd4ff" stroke-width="9"')
+    .replace(/class="mark-shell"/, 'fill="#12161d" stroke="#4dd4ff" stroke-width="9"')
     .replace(/class="pip" data-tone="a"/g, 'fill="#2fe07a"')
     .replace(/class="pip" data-tone="b"/g, 'fill="#ff6a3d"')
     .replace(/class="pip" data-tone="c"/g, 'fill="#6f7dff"')}</div>`).join('')}

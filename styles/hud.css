@@ -104,46 +104,86 @@ body{
   transition:opacity .55s ease;
 }
 #boot.done{opacity:0;pointer-events:none}
-.boot-inner{display:flex;flex-direction:column;align-items:center;width:min(420px,76vw)}
+/* Leaving through the mark rather than under it. */
+#boot.done .boot-inner{transform:scale(1.07)}
+.boot-inner{
+  display:flex;flex-direction:column;align-items:center;width:min(420px,76vw);
+  transition:transform .55s cubic-bezier(.4,0,.5,1);
+}
 
-/* The mark is the wheel's own outline, drawn by the same spline the real
-   shells use. It draws itself in while the scene is being built. */
-.mark{width:180px;height:auto;display:block;overflow:visible}
+/*
+ * Everything that moves on this screen moves by opacity or transform, and by
+ * nothing else — which is a correctness requirement here, not a style.
+ *
+ * Measured during a real boot: the main thread is blocked for 289, 659, 81 and
+ * 425 ms while the textures and the three wheels are built, about 1.4s of a
+ * 1.9s startup, with a worst frame gap of 650ms. Only opacity and transform
+ * are animated by the compositor, so only they keep running through a block.
+ * Anything else freezes for the whole of it. The mark used to draw itself in
+ * with stroke-dashoffset, which is a main-thread property: it sat perfectly
+ * still for two thirds of the time it was on screen. Hence a fade-and-settle
+ * for the entrance, and a glow that is painted once and revealed by opacity
+ * rather than transitioned through `filter`.
+ */
+.mark-wrap{
+  opacity:0;transform:translateY(12px) scale(.86);
+  animation:mark-in .9s .06s cubic-bezier(.18,.72,.24,1) forwards;
+  will-change:transform,opacity;
+}
+@keyframes mark-in{to{opacity:1;transform:none}}
+
+/* A slow rock, as if the wheel were being held lightly. This is the one thing
+   still moving while the rig is being built, so it carries the sense that
+   something is happening across the freezes the progress bar cannot cross. */
+.mark{
+  width:180px;height:auto;display:block;overflow:visible;
+  transform-origin:50% 44%;
+  animation:mark-rock 4.2s .5s ease-in-out infinite;
+  will-change:transform;
+}
+@keyframes mark-rock{
+  0%,100%{transform:rotate(0)}
+  27%{transform:rotate(2.7deg)}
+  73%{transform:rotate(-2.7deg)}
+}
 .mark-shell{
   fill:rgba(150,178,214,.05);
   stroke:#8493a8;stroke-width:8;stroke-linejoin:round;stroke-linecap:round;
-  stroke-dasharray:1;stroke-dashoffset:1;
-  animation:draw-mark 1.2s .1s cubic-bezier(.45,0,.2,1) forwards;
 }
-@keyframes draw-mark{to{stroke-dashoffset:0}}
 
-/* Loading progress is the rev bar: pips light left to right as the rig
-   comes up, green through red to blue, exactly as the real strip runs. */
-.pip{opacity:.09;transition:opacity .2s ease,filter .2s ease}
+/* Loading progress is the rev bar: pips light left to right as the rig comes
+   up, green through red to blue, exactly as the real strip runs. The glow is
+   always painted — at rest the pip is at .09 and it cannot be seen anyway — so
+   that lighting one is a pure opacity change. main.js staggers each group. */
+.pip{opacity:.09;transition:opacity .34s cubic-bezier(.3,.8,.4,1);filter:drop-shadow(0 0 5px currentColor)}
 .pip[data-tone="a"]{fill:#2fe07a;color:#2fe07a}
 .pip[data-tone="b"]{fill:#ff6a3d;color:#ff6a3d}
 .pip[data-tone="c"]{fill:#6f7dff;color:#6f7dff}
-.pip.lit{opacity:1;filter:drop-shadow(0 0 5px currentColor)}
+.pip.lit{opacity:1}
 
 .boot-word{
   margin-top:24px;font-size:15px;font-weight:500;color:#e8ecf2;
   letter-spacing:.54em;text-indent:.54em;
-  opacity:0;animation:boot-rise .7s .52s ease forwards;
+  opacity:0;animation:boot-rise .8s .46s cubic-bezier(.2,.7,.3,1) forwards;
+  will-change:transform,opacity;
 }
 .boot-tag{
   margin-top:10px;font-size:9px;text-transform:uppercase;color:#55606e;
   letter-spacing:.34em;text-indent:.34em;
-  opacity:0;animation:boot-rise .7s .68s ease forwards;
+  opacity:0;animation:boot-rise .8s .62s cubic-bezier(.2,.7,.3,1) forwards;
+  will-change:transform,opacity;
 }
-@keyframes boot-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes boot-rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
 
 .boot-msg{
   margin-top:28px;font-size:9.5px;letter-spacing:.24em;color:#4b5563;
   text-transform:uppercase;min-height:13px;text-align:center;
+  opacity:0;animation:boot-rise .8s .74s cubic-bezier(.2,.7,.3,1) forwards;
 }
 
-#boot.failed .mark-shell{stroke:#ff6a5a;animation-duration:.4s}
-#boot.failed .pip{opacity:.05;filter:none}
+#boot.failed .mark-shell{stroke:#ff6a5a}
+#boot.failed .mark{animation:none}
+#boot.failed .pip{opacity:.05}
 /* Failures carry real sentences — camera advice runs to a full line — so the
    status line drops the wide tracking and small caps it wears while loading,
    where it is only ever a two-word label. */
@@ -153,7 +193,10 @@ body{
 }
 
 @media (prefers-reduced-motion:reduce){
-  .mark-shell,.boot-word,.boot-tag{animation-duration:.01ms;animation-delay:0s}
+  .mark-wrap,.boot-word,.boot-tag,.boot-msg{animation-duration:.01ms;animation-delay:0s}
+  .mark{animation:none}
+  .pip{transition-duration:.01ms}
+  .boot-inner{transition:none}
 }
 
 /* ── hud ────────────────────────────────────────────── */

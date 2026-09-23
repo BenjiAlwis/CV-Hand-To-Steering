@@ -36,14 +36,26 @@ const bootPips = [...boot.querySelectorAll('.pip')];
  * Yields to the browser so the boot screen can actually paint between steps,
  * and lights the mark's rev pips as it goes — the loading bar is the wheel's
  * own light strip.
+ *
+ * Five steps across eleven pips means a step lights two or three at once. They
+ * are staggered rather than switched together, so the bar rolls the way a rev
+ * strip does instead of snapping in blocks. The delay is per group, not per
+ * pip index: a fixed per-index delay would leave the last pips arriving a
+ * quarter of a second late, after the screen had already begun to fade.
  */
 const STEPS = 5;
+const PIP_STAGGER_MS = 34;
 let stepsDone = 0;
 const step = async (message) => {
   bootMsg.textContent = message;
   stepsDone += 1;
   const lit = Math.round((stepsDone / STEPS) * bootPips.length);
-  bootPips.forEach((pip, i) => pip.classList.toggle('lit', i < lit));
+  let n = 0;
+  bootPips.forEach((pip, i) => {
+    if (i >= lit || pip.classList.contains('lit')) return;
+    pip.style.transitionDelay = `${n++ * PIP_STAGGER_MS}ms`;
+    pip.classList.add('lit');
+  });
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 };
 
@@ -183,6 +195,10 @@ async function main() {
 
   await step('ready');
   clearTimeout(window.__wheelhouseWatchdog);
+  // A beat for the last pips to finish arriving. Fading over the top of them
+  // mid-transition reads as the screen being cut off rather than completing,
+  // and the scene behind is already drawn by this point.
+  await new Promise((r) => setTimeout(r, 260));
   boot.classList.add('done');
   hud.reveal();
   setTimeout(() => boot.remove(), 700);
@@ -255,7 +271,4 @@ main().catch((error) => {
   console.error(error);
   boot.classList.add('failed');
   bootMsg.textContent = `failed: ${error.message}`;
-  bootMsg.style.color = '#ff6a5a';
-  bootMsg.style.textTransform = 'none';
-  bootMsg.style.letterSpacing = '0.04em';
 });
