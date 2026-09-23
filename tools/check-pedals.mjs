@@ -8,7 +8,7 @@
  * foot leaves frame, and the car's response to being driven can all be
  * checked directly.
  */
-import { footMetrics, PedalCalibrator, POSE } from '../src/vision/footmath.js';
+import { footMetrics, PedalCalibrator, POSE, framingAdvice } from '../src/vision/footmath.js';
 import { PedalSource } from '../src/input/pedalsource.js';
 import { resolveAssignment } from '../src/vision/devices.js';
 import { CarSim } from '../src/sim/carsim.js';
@@ -205,6 +205,40 @@ console.log('\nthrottle and brake');
   // One foot out of frame must not take the other with it.
   post(8, 8); run(1); post(-14, null); run(0.8);
   ok('losing the brake foot leaves the throttle working', pedals.throttle > 0.8, pedals.throttle.toFixed(2));
+}
+
+console.log('\nframing advice');
+{
+  // A foot at (x, y) reaching `len` to the right, as the landmarks come back.
+  const foot = (x, y, len, visibility) => ({
+    ankle: { x, y: y - len * 0.4 }, heel: { x, y }, toe: { x: x + len, y },
+    length: len, visibility, pitch: 0,
+  });
+  const good = () => ({ sawPerson: true, left: foot(0.30, 0.55, 0.12, 0.8), right: foot(0.58, 0.55, 0.12, 0.8) });
+  const code = (o) => framingAdvice(o).code;
+
+  ok('nothing found at all asks for more of you in shot',
+    code({ sawPerson: false }) === 'no-person');
+  ok('found without feet asks for the camera to come down',
+    code({ sawPerson: true, left: foot(0.3, 0.5, 0.1, 0.1), right: foot(0.6, 0.5, 0.1, 0.1) }) === 'no-feet');
+  ok('one foot missing is called out on its own',
+    code({ ...good(), right: foot(0.58, 0.55, 0.12, 0.05) }) === 'one-foot');
+  ok('and it names the pedal that has nothing to read',
+    /brake/.test(framingAdvice({ ...good(), left: foot(0.3, 0.55, 0.12, 0.05) }).message));
+
+  ok('a foot filling the frame is told to move back, not to centre up',
+    code({ ...good(), left: foot(0.05, 0.5, 0.45, 0.8), right: foot(0.5, 0.5, 0.45, 0.8) }) === 'too-close');
+  ok('a foot against the edge is told to leave room',
+    code({ ...good(), left: foot(0.01, 0.55, 0.12, 0.8) }) === 'at-edge');
+  ok('feet pointing at the lens are told to move it aside',
+    code({ sawPerson: true, left: foot(0.3, 0.5, 0.02, 0.8), right: foot(0.6, 0.5, 0.02, 0.8) }) === 'end-on');
+  ok('a good picture is left alone', framingAdvice(good()).ok === true);
+
+  // The order matters as much as the checks: advice that cannot be acted on
+  // until something else is fixed must not come first.
+  ok('missing feet outrank edges', code({ sawPerson: true,
+    left: foot(0.01, 0.5, 0.12, 0.05), right: foot(0.6, 0.5, 0.12, 0.05) }) === 'no-feet');
+  ok('no person outranks everything', code({ sawPerson: false, left: foot(0.3, 0.5, 0.45, 0.9) }) === 'no-person');
 }
 
 console.log('\ncamera assignment');

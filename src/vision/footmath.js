@@ -163,3 +163,76 @@ export class PedalCalibrator {
 }
 
 export { clamp };
+
+/**
+ * Why the feet are not being tracked, and what to do about it.
+ *
+ * Measured on a real rig, every one of these states looks identical from the
+ * outside — the pedals simply do not move — and they need opposite things
+ * done about them. A camera 30cm from one sole and a camera across the room
+ * both report "no feet"; one needs to move back and the other forward.
+ *
+ * The advice is ordered by what has to be true first. There is no point
+ * telling someone to centre their feet when the model cannot find a person,
+ * and no point talking about visibility when only one foot is in the picture.
+ *
+ * @param {object} o
+ * @param {boolean} o.sawPerson      whether the pose graph found anyone
+ * @param {object|null} o.left       from `footMetrics`
+ * @param {object|null} o.right
+ * @param {number} [o.gate]          the visibility a foot must reach
+ * @returns {{ok: boolean, code: string, message: string}}
+ */
+export function framingAdvice({ sawPerson, left, right, gate = 0.30 } = {}) {
+  const say = (ok, code, message) => ({ ok, code, message });
+
+  if (!sawPerson) {
+    return say(false, 'no-person',
+      'nobody in shot — the model finds feet by finding you, so move the camera back until your shins are in the picture');
+  }
+
+  const seen = { left: (left?.visibility ?? 0) >= gate, right: (right?.visibility ?? 0) >= gate };
+
+  if (!seen.left && !seen.right) {
+    return say(false, 'no-feet',
+      'you are in shot but your feet are not — angle the camera down, or move it back');
+  }
+
+  if (!seen.left || !seen.right) {
+    const missing = seen.left ? 'right' : 'left';
+    return say(false, 'one-foot',
+      `only your ${seen.left ? 'left' : 'right'} foot is being seen — both have to be in frame, ` +
+      `or the ${missing === 'right' ? 'throttle' : 'brake'} has nothing to read`);
+  }
+
+  // Both feet are there. Now the things that make a good read a bad one.
+  //
+  // Too close is tested before too near the edge, because a foot that fills
+  // the frame is also touching its edge, and "move the camera back" is the
+  // instruction that fixes both. Told to centre their feet instead, someone
+  // would shuffle a foot that cannot fit wherever they put it.
+  const TOO_CLOSE = 0.34;
+  if (Math.max(left.length, right.length) > TOO_CLOSE) {
+    return say(false, 'too-close',
+      'the camera is very close — move it back until both feet fit with room to spare');
+  }
+
+  const EDGE = 0.06;
+  const atEdge = [left, right].some((f) =>
+    [f.heel, f.toe, f.ankle].some((p) =>
+      p.x < EDGE || p.x > 1 - EDGE || p.y < EDGE || p.y > 1 - EDGE));
+  if (atEdge) {
+    return say(false, 'at-edge',
+      'your feet are against the edge of the frame — they will drop out as you move, so leave some room around them');
+  }
+
+  // Foreshortening: seen end-on, a foot barely changes shape as it pivots, so
+  // there is nothing for the pedal to read even though tracking looks fine.
+  const TOO_SHORT = 0.05;
+  if (Math.min(left.length, right.length) < TOO_SHORT) {
+    return say(false, 'end-on',
+      'your feet are pointing at the camera, so pressing barely changes what it sees — move it more to one side');
+  }
+
+  return say(true, 'ok', 'both feet tracking');
+}

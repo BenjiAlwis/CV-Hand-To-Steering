@@ -70,7 +70,7 @@ export class CameraPanel {
    * that will not move is almost always a foot the model cannot see, and
    * that is obvious the moment you can watch it being tracked.
    */
-  drawFeet(video, tracker, pedals) {
+  drawFeet(video, tracker, pedals, advice) {
     const live = !!tracker?.running;
     this.footRoot.classList.toggle('live', live);
 
@@ -140,12 +140,14 @@ export class CameraPanel {
         n ? 'live' : 'busy',
       );
     }
-    const t = pedals?.state?.throttle, br = pedals?.state?.brake;
-    this.footHintEl.textContent = t?.seen || br?.seen
-      ? `heels down, pivot at the ankle · R ${Math.round((t?.visibility ?? 0) * 100)}% L ${Math.round((br?.visibility ?? 0) * 100)}%`
-      : tracker.sawPerson
-        ? 'move the camera back until your shins are in shot — it finds feet by finding you'
-        : 'right foot throttle, left foot brake';
+    // The hint is where the framing gets coached, because a pedal that will
+    // not move is nearly always a camera in the wrong place rather than a
+    // driver doing the wrong thing.
+    const th = pedals?.state?.throttle, br = pedals?.state?.brake;
+    this.footHintEl.textContent = advice?.ok
+      ? `heels down, pivot at the ankle · R ${Math.round((th?.visibility ?? 0) * 100)}% L ${Math.round((br?.visibility ?? 0) * 100)}%`
+      : advice?.message ?? 'right foot throttle, left foot brake';
+    this.footHintEl.classList.toggle('coaching', !!advice && !advice.ok);
     if (tracker.settings) {
       this.footPipeEl.textContent =
         `${tracker.settings.width}×${tracker.settings.height} · ${tracker.fps}fps · ${tracker.inferenceMs.toFixed(0)}ms`;

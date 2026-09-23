@@ -19,6 +19,7 @@ import { KeyboardSource } from './input/keyboard.js';
 import { HandTracker } from './vision/handtracker.js';
 import { FootTracker } from './vision/foottracker.js';
 import { PedalSource } from './input/pedalsource.js';
+import { framingAdvice } from './vision/footmath.js';
 import { listCameras, loadAssignment, saveAssignment, resolveAssignment } from './vision/devices.js';
 import { Settings } from './ui/settings.js';
 import { PanelChrome } from './ui/panelchrome.js';
@@ -308,7 +309,16 @@ async function main() {
     // A preview nobody can see does not need the frame blitted into it, but
     // the trackers behind them keep running either way.
     if (chrome.isVisible('camera')) camera.draw(cameraFeed, tracker, handSource, shifter);
-    if (chrome.isVisible('foot')) camera.drawFeet(footFeed, footTracker, pedals);
+    if (chrome.isVisible('foot')) {
+      const latest = footTracker.latest;
+      camera.drawFeet(footFeed, footTracker, pedals, footTracker.running
+        ? framingAdvice({
+            sawPerson: footTracker.sawPerson,
+            left: latest?.left, right: latest?.right,
+            gate: pedals.minVisibility,
+          })
+        : null);
+    }
 
     hud.update(dt, {
       controller,

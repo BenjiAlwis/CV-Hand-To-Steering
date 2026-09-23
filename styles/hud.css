@@ -347,3 +347,6 @@ kbd{
 .set-panels{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:9px}
 .set-panel-row{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--ink);cursor:pointer}
 .set-panel-row input{accent-color:#2fe07a;width:13px;height:13px}
+
+/* Framing advice reads as something to act on, not as a caption. */
+.cam-hint.coaching{color:#ffb545;letter-spacing:.02em;line-height:1.5;min-height:26px}

@@ -11,7 +11,8 @@
     "serve": "node tools/serve.mjs --no-open",
     "check": "node tools/check-layout.mjs && node tools/check-handmath.mjs && node tools/check-steering.mjs && node tools/check-pedals.mjs && node tools/check-settings.mjs",
     "logo": "node tools/make-logo.mjs --write",
-    "footcheck": "node tools/footcheck.mjs"
+    "footcheck": "node tools/footcheck.mjs",
+    "footlab": "node tools/footlab.mjs"
   },
   "devDependencies": {
     "electron": "^44.4.3"
