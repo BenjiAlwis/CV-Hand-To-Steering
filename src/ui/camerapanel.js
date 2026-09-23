@@ -10,7 +10,7 @@
  * it runs on the raw frame; only this preview is flipped.
  */
 export class CameraPanel {
-  constructor({ onToggle, onRecalibrate, onRatio, onAssign, onZeroPedals }) {
+  constructor({ onToggle, onRecalibrate, onRatio, onZeroPedals }) {
     this.root = document.getElementById('camera');
     this.canvas = document.getElementById('cameraCanvas');
     this.ctx = this.canvas.getContext('2d');
@@ -48,43 +48,9 @@ export class CameraPanel {
     };
     document.getElementById('pedalZero').addEventListener('click', () => onZeroPedals?.());
 
-    this.picks = {
-      hands: document.getElementById('handsCamera'),
-      feet: document.getElementById('feetCamera'),
-    };
-    for (const [job, el] of Object.entries(this.picks)) {
-      el.addEventListener('change', () => onAssign?.(job, el.value || null));
-    }
-
     this.enabled = false;
     this.sticky = false;
     this.footSticky = false;
-  }
-
-  /**
-   * Fills the two camera pickers.
-   *
-   * When `named` is false the browser is withholding device identities, so
-   * the list cannot tell one camera from another — say that rather than
-   * offering a choice that would not mean anything.
-   */
-  setDevices(cameras, assignment, named) {
-    for (const [job, el] of Object.entries(this.picks)) {
-      el.innerHTML = '';
-      if (!named) {
-        el.append(new Option('camera not identified', ''));
-        el.disabled = true;
-        continue;
-      }
-      el.disabled = false;
-      if (job === 'feet') el.append(new Option('none', ''));
-      for (const cam of cameras) {
-        // A long USB name would blow the panel out; the tail is the useful half.
-        const label = cam.label.length > 26 ? `…${cam.label.slice(-25)}` : cam.label;
-        el.append(new Option(label, cam.deviceId));
-      }
-      el.value = assignment?.[job] ?? '';
-    }
   }
 
   setFootStatus(message, state = 'idle') {

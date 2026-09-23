@@ -20,6 +20,9 @@ import { HandTracker } from './vision/handtracker.js';
 import { FootTracker } from './vision/foottracker.js';
 import { PedalSource } from './input/pedalsource.js';
 import { listCameras, loadAssignment, saveAssignment, resolveAssignment } from './vision/devices.js';
+import { Settings } from './ui/settings.js';
+import { PanelChrome } from './ui/panelchrome.js';
+import { SettingsPanel } from './ui/settingspanel.js';
 import { HandTrackingSource } from './input/handsource.js';
 import { Shifter } from './input/shifter.js';
 import { CameraPanel } from './ui/camerapanel.js';
@@ -102,6 +105,7 @@ async function main() {
   const controller = new SteeringController({ lockDegrees: LOCK_DEGREES });
   const sim = new CarSim();
   const hud = new Hud();
+  const settings = new Settings();
 
   mountWheel(DEFAULT_TEAM);
 
@@ -121,9 +125,10 @@ async function main() {
     onToggle: () => toggleCamera(),
     onRecalibrate: () => handSource.recalibrate(),
     onRatio: (step) => handSource.setRatio(handSource.ratio + step),
-    onAssign: (job, deviceId) => assignCamera(job, deviceId),
     onZeroPedals: () => pedals.recalibrate(),
   });
+
+  const chrome = new PanelChrome(settings);
 
   const tracker = new HandTracker({
     onStatus: ({ state, message }) => {
@@ -159,6 +164,7 @@ async function main() {
     if (sim.shift(direction)) rig.wheel?.pullShiftPaddle(direction);
   };
   const shifter = new Shifter(handSource, { onShift: shift });
+  shifter.enabled = settings.get('flaps');
 
   /**
    * Works out which camera does which job.
@@ -173,7 +179,7 @@ async function main() {
     assignment = named
       ? resolveAssignment(cameras, loadAssignment())
       : { hands: null, feet: null };
-    camera.setDevices(cameras, assignment, named);
+    settingsPanel?.setDevices(cameras, assignment, named);
     return { cameras, named };
   }
 
@@ -185,7 +191,7 @@ async function main() {
    * built-in lens — and there is no reason for steering to wait on pedals.
    */
   async function startFeet() {
-    if (!assignment.feet || footTracker.running) return;
+    if (!settings.get('pedals') || !assignment.feet || footTracker.running) return;
     try {
       await footTracker.start(footFeed, assignment.feet);
       pedals.recalibrate();
@@ -193,6 +199,27 @@ async function main() {
       /* the panel already carries the reason; steering is unaffected */
     }
   }
+
+  const settingsPanel = new SettingsPanel({
+    settings,
+    chrome,
+    onRescan: async () => {
+      const found = await refreshCameras();
+      return { ...found, assignment };
+    },
+    onAssign: (job, deviceId) => assignCamera(job, deviceId),
+  });
+
+  // Acting on a changed setting, rather than only remembering it.
+  settings.onChange((key, value) => {
+    if (key === 'flaps') shifter.enabled = value;
+    if (key === 'pedals') {
+      // Turning pedals off stops the second camera outright: leaving a camera
+      // running to feed something switched off would be the wrong trade, and
+      // the tally light staying on would be worse.
+      if (value) startFeet(); else footTracker.stop();
+    }
+  });
 
   async function toggleCamera(force) {
     if (cameraBusy) return;
@@ -245,7 +272,10 @@ async function main() {
     mountWheel(TEAM_IDS[(i + dir + TEAM_IDS.length) % TEAM_IDS.length]);
   };
 
-  bindKeys(app, controller, hud, cycleTeam, { toggleCamera, handSource, shift });
+  bindKeys(app, controller, hud, cycleTeam, {
+    toggleCamera, handSource, shift,
+    toggleSettings: (force) => settingsPanel.toggle(force),
+  });
 
   app.start((dt, elapsed) => {
     app.updateCamera(dt);
@@ -265,7 +295,7 @@ async function main() {
     // your legs or a foot passing out of frame does not bounce the car
     // between being driven and driving itself.
     let pedalInput = null;
-    if (footTracker.running) {
+    if (footTracker.running && settings.get('pedals')) {
       const read = pedals.read(dt);
       if (pedals.state.tracking) feetLastSeen = elapsed;
       if (feetLastSeen !== null && elapsed - feetLastSeen < FEET_HANDBACK) pedalInput = read;
@@ -275,8 +305,10 @@ async function main() {
     const telemetry = sim.update(dt, controller.normalised, pedalInput);
     rig.wheel.update(dt, telemetry);
     environment.update(dt, elapsed);
-    camera.draw(cameraFeed, tracker, handSource, shifter);
-    camera.drawFeet(footFeed, footTracker, pedals);
+    // A preview nobody can see does not need the frame blitted into it, but
+    // the trackers behind them keep running either way.
+    if (chrome.isVisible('camera')) camera.draw(cameraFeed, tracker, handSource, shifter);
+    if (chrome.isVisible('foot')) camera.drawFeet(footFeed, footTracker, pedals);
 
     hud.update(dt, {
       controller,
@@ -310,6 +342,7 @@ async function main() {
   Object.assign(window, {
     app, rig, controller, sim, environment, tracker, handSource, shifter,
     footTracker, pedals, assignCamera, refreshCameras,
+    settings, chrome, settingsPanel,
   });
   Object.defineProperty(window, 'wheel', { get: () => rig.wheel, configurable: true });
 
@@ -341,6 +374,8 @@ function bindKeys(app, controller, hud, cycleTeam, vision) {
       case 'KeyC': app.toggleFreeCamera(); break;
       case 'KeyR': controller.recentre(); break;
       case 'KeyH': hud.toggle(); break;
+      case 'KeyS': vision.toggleSettings(); break;
+      case 'Escape': vision.toggleSettings(false); break;
       case 'KeyT': cycleTeam(event.shiftKey ? -1 : 1); break;
       case 'KeyV': vision.toggleCamera(); break;
       case 'KeyZ': vision.handSource.recalibrate(); break;

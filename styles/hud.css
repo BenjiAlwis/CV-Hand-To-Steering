@@ -26,10 +26,16 @@ body{
 #cameraFeed{position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;top:-10px;left:-10px}
 
 .panel.camera{min-width:296px;pointer-events:auto}
-#cameraCanvas{
+/* A class, not an id: an id here would outrank the rule that rolls a panel
+   up, and the preview would stay on screen inside a collapsed panel. */
+.cam-canvas{
   width:100%;height:auto;display:block;border-radius:6px;
   background:#080a0e;border:1px solid var(--line);
 }
+/* Nothing is being drawn into it, so it would only be a black hole in the
+   panel where the picture is going to be. */
+.panel.foot:not(.live) .cam-canvas,
+.panel.foot:not(.live) .cam-pipe{display:none}
 .cam-status{font-size:10px;letter-spacing:.14em;margin-top:9px;color:var(--dim)}
 .cam-status[data-tone="live"]{color:#2fe07a}
 .cam-status[data-tone="error"]{color:#ff6a5a;letter-spacing:.04em;line-height:1.5}
@@ -77,16 +83,6 @@ body{
 .pedal-track i.pressed{box-shadow:0 0 9px currentColor;color:#2fe07a}
 .pedal-track.brake i{background:#ff6a3d}
 .pedal-track.brake i.pressed{color:#ff6a3d}
-
-/* Which lens does which job. Kept quiet — it is set once and then ignored. */
-.cam-pick{display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:11px}
-.cam-pick label{font-size:9px;letter-spacing:.2em;color:var(--dim)}
-.cam-pick select{
-  width:100%;min-width:0;font:inherit;font-size:10px;color:#c8d2de;
-  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
-  border-radius:5px;padding:3px 5px;
-}
-.cam-pick select:disabled{opacity:.4}
 
 .cam-buttons{display:flex;gap:7px;margin-top:11px}
 .cam-buttons button{
@@ -279,3 +275,75 @@ kbd{
   .panel{min-width:180px}
   .angle-readout{font-size:30px}
 }
+
+/* ── rolling panels up ──────────────────────────────── */
+/*
+ * Collapsing hides the panel's body and nothing else. A rolled-up camera
+ * panel is still tracking: the model runs, the wheel still steers, the pedals
+ * still work. Turning the camera off is a different thing, and has its own
+ * button that says so.
+ */
+.panel-roll{
+  font:inherit;font-size:12px;line-height:1;color:var(--dim);
+  width:17px;height:17px;flex:none;order:9;
+  display:grid;place-items:center;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:5px;
+}
+.panel-roll:hover{background:rgba(255,255,255,.14);color:var(--ink)}
+.panel-title::after{order:5}
+
+.panel.collapsed{padding-bottom:12px}
+.panel.collapsed .panel-title{margin-bottom:0}
+.panel.collapsed > *:not(.panel-title){display:none}
+.panel.panel-hidden{display:none}
+
+/* ── settings ───────────────────────────────────────── */
+.settings-sheet{
+  position:fixed;inset:0;z-index:14;display:grid;place-items:center;
+  background:rgba(4,6,10,.62);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity .2s ease;
+}
+.settings-sheet.open{opacity:1;pointer-events:auto}
+/* #hud sets pointer-events:none so the scene can be dragged through it; the
+   sheet has to opt its own controls back in. */
+.settings-sheet.open *{pointer-events:auto}
+.settings-sheet > .panel{
+  width:min(430px,92vw);max-height:86vh;overflow-y:auto;pointer-events:auto;
+}
+.panel-x{
+  font:inherit;font-size:15px;line-height:1;color:var(--dim);order:9;flex:none;
+  width:20px;height:20px;display:grid;place-items:center;cursor:pointer;
+  background:none;border:0;border-radius:5px;
+}
+.panel-x:hover{background:rgba(255,255,255,.12);color:var(--ink)}
+
+.set-group{margin-top:15px}
+.set-group:first-of-type{margin-top:4px}
+.set-group-name{font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:9px}
+
+.set-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:11px;cursor:pointer}
+.set-row input{margin-top:2px;flex:none;accent-color:#2fe07a;width:14px;height:14px}
+.set-row b{display:block;font-size:11.5px;font-weight:500;color:var(--ink)}
+.set-row em{display:block;font-style:normal;font-size:10px;line-height:1.5;color:var(--dim);margin-top:3px}
+
+.set-cam-row{display:grid;grid-template-columns:52px 1fr;gap:9px;align-items:center;margin-bottom:7px}
+.set-cam-row label{font-size:10px;color:var(--dim)}
+.set-cam-row select{
+  width:100%;min-width:0;font:inherit;font-size:10.5px;color:#c8d2de;
+  background:rgba(255,255,255,.05);border:1px solid var(--line);
+  border-radius:6px;padding:5px 6px;
+}
+.set-cam-row select:disabled{opacity:.45}
+
+.set-note{font-size:10px;line-height:1.55;color:var(--dim);margin:8px 0 0}
+.set-button{
+  margin-top:10px;font:inherit;font-size:10px;letter-spacing:.12em;
+  padding:7px 11px;border-radius:6px;cursor:pointer;
+  background:rgba(255,255,255,.06);color:var(--ink);
+  border:1px solid var(--line);border-bottom-width:2px;
+}
+.set-button:hover{background:rgba(255,255,255,.13)}
+
+.set-panels{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:9px}
+.set-panel-row{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--ink);cursor:pointer}
+.set-panel-row input{accent-color:#2fe07a;width:13px;height:13px}

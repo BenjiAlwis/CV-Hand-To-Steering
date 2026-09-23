@@ -24,6 +24,8 @@ export class Shifter {
     this.onShift = onShift ?? (() => {});
     this.finger = finger;
     this.detectors = { right: new FlickDetector(), left: new FlickDetector() };
+    /** Switched off in settings, for drivers who would rather use the keys. */
+    this.enabled = true;
     /** For the overlay: how far each trigger finger is currently extended. */
     this.state = { right: 0, left: 0, armed: false };
   }
@@ -33,8 +35,10 @@ export class Shifter {
     const hands = this.source.hands;
 
     // Only while the wheel is actually being held. A hand waved in front of
-    // the camera should not be able to change gear.
-    if (!this.source.state.holding || !hands) {
+    // the camera should not be able to change gear. Switched off, the
+    // detectors are reset rather than merely ignored, so turning it back on
+    // cannot deliver a shift left over from a finger moved while it was off.
+    if (!this.enabled || !this.source.state.holding || !hands) {
       for (const d of Object.values(this.detectors)) d.reset();
       this.state.armed = false;
       this.state.right = 0;
