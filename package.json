@@ -1,0 +1,21 @@
+{
+  "name": "cv-steering-wheel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bare-hands steering: close your fists to grip a photoreal F1 wheel, turn, and flick a finger to shift. Webcam hand tracking with MediaPipe + Three.js.",
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "node tools/launch.mjs",
+    "web": "node tools/serve.mjs",
+    "serve": "node tools/serve.mjs --no-open",
+    "check": "node tools/check-layout.mjs && node tools/check-handmath.mjs && node tools/check-steering.mjs"
+  },
+  "devDependencies": {
+    "electron": "^44.4.3"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "three": "^0.170.0"
+  }
+}

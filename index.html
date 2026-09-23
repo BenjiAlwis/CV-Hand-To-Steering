@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Wheelhouse — Formula Steering Rig</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%234dd4ff' stroke-width='3'/%3E%3Cpath d='M3 16h26M16 16v13' stroke='%234dd4ff' stroke-width='3'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles/hud.css" />
+<!--
+  Three.js is served from node_modules, not a CDN. A desktop app should not
+  need the network to start, and a failed CDN fetch breaks the entry module
+  before any of its own error handling can run.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/node_modules/three/build/three.module.js",
+    "three/addons/": "/node_modules/three/examples/jsm/",
+    "@mediapipe/tasks-vision": "/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <video id="cameraFeed" playsinline muted></video>
+  <div id="titlebar" aria-hidden="true"><span>WHEELHOUSE</span></div>
+
+  <div id="boot">
+    <div class="boot-inner">
+      <div class="boot-mark">WHEELHOUSE</div>
+      <div class="boot-bar"><i></i></div>
+      <div class="boot-msg">building composite geometry…</div>
+    </div>
+  </div>
+
+  <div id="hud" class="hidden">
+    <div class="hud-corner tl">
+      <div class="panel">
+        <div class="panel-title">STEERING</div>
+        <div class="angle-readout"><span id="angleValue">0.0</span><em>°</em></div>
+        <div class="steer-bar">
+          <div class="steer-track">
+            <i class="tick c"></i>
+            <div class="steer-fill" id="steerFill"></div>
+            <div class="steer-needle" id="steerNeedle"></div>
+          </div>
+          <div class="steer-scale"><span>−135</span><span>0</span><span>+135</span></div>
+        </div>
+        <div class="kv"><span>NORMALISED</span><b id="normValue">0.000</b></div>
+        <div class="kv"><span>SOURCE</span><b id="srcValue">pointer</b></div>
+        <div class="kv"><span>CONFIDENCE</span><b id="confValue">—</b></div>
+      </div>
+    </div>
+
+    <div class="hud-corner tr">
+      <div class="panel compact">
+        <div class="panel-title">RIG</div>
+        <div class="kv"><span>FPS</span><b id="fpsValue">—</b></div>
+        <div class="kv"><span>DRAWS</span><b id="drawValue">—</b></div>
+        <div class="kv"><span>CAMERA</span><b id="camValue">driver</b></div>
+      </div>
+
+      <div class="panel compact team">
+        <div class="panel-title">WHEEL</div>
+        <div class="team-name" id="teamValue">—</div>
+        <div class="team-sub" id="teamSub"></div>
+      </div>
+    </div>
+
+    <div class="hud-corner bl">
+      <div class="panel keys">
+        <div class="panel-title">CONTROLS</div>
+        <div class="key-row"><kbd>drag</kbd><span>turn the wheel</span></div>
+        <div class="key-row"><kbd>A</kbd><kbd>D</kbd><span>steer left / right</span></div>
+        <div class="key-row"><kbd>C</kbd><span>free camera</span></div>
+        <div class="key-row"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><span>camera preset</span></div>
+        <div class="key-row"><kbd>T</kbd><span>change wheel</span></div>
+      <div class="key-row"><kbd>R</kbd><span>recentre</span></div>
+        <div class="key-row"><kbd>V</kbd><span>camera on / off</span></div>
+      <div class="key-row"><kbd>Q</kbd><kbd>E</kbd><span>shift down / up</span></div>
+      <div class="key-row"><kbd>Z</kbd><span>set hands level</span></div>
+      <div class="key-row"><kbd>-</kbd><kbd>=</kbd><span>steering ratio</span></div>
+      <div class="key-row"><kbd>H</kbd><span>hide overlay</span></div>
+      </div>
+    </div>
+
+    <div class="hud-corner br">
+      <div class="panel camera" id="camera">
+        <div class="panel-title">HAND TRACKING</div>
+        <canvas id="cameraCanvas" width="320" height="180"></canvas>
+        <div class="cam-status" id="cameraStatus" data-tone="busy">starting camera…</div>
+        <div class="grip-row">
+          <span>FLAP</span>
+          <div class="grip-track flap"><i id="flapL"></i></div>
+          <div class="grip-track flap"><i id="flapR"></i></div>
+        </div>
+        <div class="grip-row">
+          <span>GRIP</span>
+          <div class="grip-track"><i id="gripL"></i></div>
+          <div class="grip-track"><i id="gripR"></i></div>
+        </div>
+        <div class="cam-hint" id="cameraHint">start the camera and mime a wheel</div>
+        <div class="cam-pipe" id="cameraPipeline"></div>
+
+        <div class="corr">
+          <div class="corr-dial"><i id="handNeedle"></i></div>
+          <div class="corr-nums">
+            <div class="corr-row"><span>HANDS</span><b id="handAngle">+0°</b></div>
+            <div class="corr-row"><span>WHEEL</span><b id="wheelAngle">+0°</b></div>
+            <div class="corr-row ratio">
+              <span>RATIO</span>
+              <button id="ratioDown" type="button" aria-label="less">−</button>
+              <b id="ratioValue">1.00×</b>
+              <button id="ratioUp" type="button" aria-label="more">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="cam-buttons">
+          <button id="cameraToggle" type="button">Stop camera</button>
+          <button id="cameraZero" type="button">Set level</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    Catches failures that happen before src/main.js runs at all — a missing
+    dependency, a syntax error, a bad import. Without this the boot screen
+    just sits there claiming it is still working.
+  -->
+  <script>
+    (function () {
+      var reported = false;
+      function fail(detail) {
+        if (reported) return;
+        reported = true;
+        var msg = document.querySelector('#boot .boot-msg');
+        var bar = document.querySelector('#boot .boot-bar');
+        if (bar) bar.style.display = 'none';
+        if (msg) {
+          msg.style.color = '#ff6a5a';
+          msg.style.textTransform = 'none';
+          msg.style.letterSpacing = '0.04em';
+          msg.textContent = detail;
+        }
+        console.error('[wheelhouse] startup failed:', detail);
+      }
+      window.addEventListener('error', function (event) {
+        if (event.target && event.target.tagName === 'SCRIPT') {
+          fail('could not load ' + (event.target.src || 'a script') +
+               ' — run `npm install`, then try again');
+        } else if (event.message) {
+          fail(event.message);
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (event) {
+        fail(String(event.reason && event.reason.message || event.reason));
+      });
+      // Nothing should take this long, so if it does, say so rather than
+      // leaving the progress bar sweeping forever.
+      window.__wheelhouseWatchdog = setTimeout(function () {
+        fail('startup stalled — check the console (View → Developer Tools)');
+      }, 25000);
+    })();
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
