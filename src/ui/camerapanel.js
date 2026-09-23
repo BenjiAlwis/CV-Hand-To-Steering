@@ -9,7 +9,7 @@
  * The feed is drawn mirrored so it reads like a mirror, but the maths behind
  * it runs on the raw frame; only this preview is flipped.
  */
-import { handBox, footBox, boxClipped, visibleFraction } from '../vision/boxes.js';
+import { handBox, boxClipped, visibleFraction } from '../vision/boxes.js';
 
 /**
  * Draws one bounding box, labelled.
@@ -24,8 +24,10 @@ import { handBox, footBox, boxClipped, visibleFraction } from '../vision/boxes.j
  */
 function drawBox(c, box, { colour, label, W, offsetX, offsetY, dw, dh }) {
   if (!box) return;
+  // Derived rather than read off the box: these arrive both from the landmark
+  // boxes, which carry a width, and from the detector's blobs, which do not.
   const x = offsetX + box.x0 * dw, y = offsetY + box.y0 * dh;
-  const w = box.width * dw, h = box.height * dh;
+  const w = (box.x1 - box.x0) * dw, h = (box.y1 - box.y0) * dh;
   const cut = boxClipped(box);
 
   c.save();
@@ -148,18 +150,6 @@ export class CameraPanel {
       if (!foot) continue;
       const faded = foot.visibility < 0.55;
 
-      if (this.boxes) {
-        const box = footBox(foot);
-        ctx.globalAlpha = faded ? 0.45 : 1;
-        drawBox(ctx, box, {
-          colour: tone, W: w, offsetX: 0, offsetY: 0, dw: w, dh: h,
-          // The model's own confidence, since a foot it is unsure about is
-          // the commonest reason a pedal will not move.
-          label: `${side} ${Math.round(foot.visibility * 100)}%` +
-            (boxClipped(box) ? ' · cut off' : ''),
-        });
-      }
-
       ctx.globalAlpha = faded ? 0.3 : 1;
       ctx.strokeStyle = tone;
       ctx.fillStyle = tone;
@@ -175,6 +165,22 @@ export class CameraPanel {
         ctx.fill();
       }
     }
+    // The boxes come from the segmentation detector rather than from the pose
+    // landmarks. Pose only reports a foot when it has found a person to hang
+    // it on, so boxes drawn from it were empty exactly when they were most
+    // wanted; the detector finds feet without needing anyone attached.
+    if (this.boxes) {
+      for (const foot of tracker.boxes ?? []) {
+        ctx.globalAlpha = 1;
+        drawBox(ctx, foot, {
+          colour: foot.side === 'right' ? '#2fe07a' : foot.side === 'left' ? '#ff6a3d' : '#4dd4ff',
+          W: w, offsetX: 0, offsetY: 0, dw: w, dh: h,
+          label: `${foot.side ?? 'foot'} ${Math.round(foot.confidence * 100)}%` +
+            (boxClipped(foot) ? ' · cut off' : ''),
+        });
+      }
+    }
+
     ctx.globalAlpha = 1;
     ctx.restore();
 

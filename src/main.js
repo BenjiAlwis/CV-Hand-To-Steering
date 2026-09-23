@@ -167,6 +167,10 @@ async function main() {
   const shifter = new Shifter(handSource, { onShift: shift });
   shifter.enabled = settings.get('flaps');
   camera.setBoxes(settings.get('boxes'));
+  // The box detector is a second model on the same GPU, so it is only loaded
+  // when boxes are actually being looked at.
+  const syncBoxDetector = () => footTracker.enableBoxes(settings.get('boxes') && footTracker.running)
+    .catch(() => { /* the panel still has the skeleton */ });
 
   /**
    * Works out which camera does which job.
@@ -197,6 +201,7 @@ async function main() {
     try {
       await footTracker.start(footFeed, assignment.feet);
       pedals.recalibrate();
+      syncBoxDetector();
     } catch {
       /* the panel already carries the reason; steering is unaffected */
     }
@@ -215,7 +220,7 @@ async function main() {
   // Acting on a changed setting, rather than only remembering it.
   settings.onChange((key, value) => {
     if (key === 'flaps') shifter.enabled = value;
-    if (key === 'boxes') camera.setBoxes(value);
+    if (key === 'boxes') { camera.setBoxes(value); syncBoxDetector(); }
     if (key === 'pedals') {
       // Turning pedals off stops the second camera outright: leaving a camera
       // running to feed something switched off would be the wrong trade, and

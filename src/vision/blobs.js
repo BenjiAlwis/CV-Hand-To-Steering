@@ -118,6 +118,8 @@ export function findBlobs(mask, width, height, { minArea = 0 } = {}) {
       pixels: area,
       x0: minX / width, y0: minY / height,
       x1: (maxX + 1) / width, y1: (maxY + 1) / height,
+      // Carried so a blob and a landmark box are the same shape to a caller.
+      width: (maxX + 1 - minX) / width, height: (maxY + 1 - minY) / height,
       cx: sumX / area / width, cy: sumY / area / height,
       clipped: {
         left: minX === 0, right: maxX === width - 1,

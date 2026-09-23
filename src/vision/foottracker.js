@@ -14,6 +14,7 @@
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { footMetrics } from './footmath.js';
 import { CameraCapture } from './capture.js';
+import { FootDetector } from './footdetector.js';
 
 const WASM_PATH = '/node_modules/@mediapipe/tasks-vision/wasm';
 /**
@@ -48,6 +49,22 @@ export class FootTracker {
      */
     this.minIntervalMs = minIntervalMs;
     this._lastDetect = 0;
+
+    /**
+     * The segmentation detector, for boxes.
+     *
+     * Separate from the pose graph on purpose. Pose gives the ankle, heel and
+     * toe the pedal is read from, but only when it can find a person, which a
+     * camera pointed at a pair of feet usually cannot. Segmentation finds the
+     * feet themselves and gives boxes but no pivot. Neither replaces the
+     * other yet, so when boxes are asked for, both run — and the detector
+     * runs slowly, because a box is for looking at rather than steering by.
+     */
+    this.detector = null;
+    this.boxes = [];
+    this.boxMs = 0;
+    this._boxIntervalMs = 120;
+    this._lastBox = 0;
     // Low on purpose. A foot camera sees a fraction of a person, so the
     // detector is never confident — hold it to the confidence you would want
     // from a full-body shot and it simply never fires. What a loose threshold
@@ -107,8 +124,30 @@ export class FootTracker {
     this.onStatus({ state: 'searching', message: 'looking for your feet…' });
   }
 
+  /**
+   * Turns the box detector on or off.
+   *
+   * Loading is lazy: the segmentation model is 16MB and there is no reason to
+   * pay for it until somebody asks to see boxes.
+   */
+  async enableBoxes(on) {
+    if (!on) {
+      this.detector?.close();
+      this.detector = null;
+      this.boxes = [];
+      return;
+    }
+    if (this.detector) return;
+    const detector = new FootDetector({ model: 'multiclass' });
+    await detector.load();
+    this.detector = detector;
+  }
+
   stop() {
     this.camera.stop();
+    this.detector?.close();
+    this.detector = null;
+    this.boxes = [];
     this.latest = null;
     this.onStatus({ state: 'off', message: 'foot camera off' });
   }
@@ -118,6 +157,17 @@ export class FootTracker {
     this._lastDetect = began;
     const result = this.landmarker.detectForVideo(source, stamp);
     this.inferenceMs += (performance.now() - began - this.inferenceMs) * 0.1;
+
+    if (this.detector && began - this._lastBox >= this._boxIntervalMs) {
+      this._lastBox = began;
+      try {
+        const found = this.detector.detect(source, stamp + 0.5);
+        this.boxes = found.feet;
+        this.boxMs = this.detector.inferenceMs;
+      } catch {
+        this.boxes = [];
+      }
+    }
 
     const lm = result?.landmarks?.[0] ?? null;
     /** Whether a person was found at all, as opposed to found without feet. */
