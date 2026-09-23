@@ -9,6 +9,48 @@
  * The feed is drawn mirrored so it reads like a mirror, but the maths behind
  * it runs on the raw frame; only this preview is flipped.
  */
+import { handBox, footBox, boxClipped, visibleFraction } from '../vision/boxes.js';
+
+/**
+ * Draws one bounding box, labelled.
+ *
+ * The box is drawn inside the mirrored frame so it sits on what it describes,
+ * but the label is drawn back the right way round — mirrored text is not
+ * readable, and a label nobody can read is worse than no label.
+ *
+ * A box that runs off the picture is dashed rather than solid, because the
+ * two cases mean different things: a solid box is the whole hand, a dashed
+ * one is as much of it as the camera can see.
+ */
+function drawBox(c, box, { colour, label, W, offsetX, offsetY, dw, dh }) {
+  if (!box) return;
+  const x = offsetX + box.x0 * dw, y = offsetY + box.y0 * dh;
+  const w = box.width * dw, h = box.height * dh;
+  const cut = boxClipped(box);
+
+  c.save();
+  c.strokeStyle = colour;
+  c.lineWidth = 1.75;
+  c.setLineDash(cut ? [5, 4] : []);
+  c.globalAlpha = 0.95;
+  c.strokeRect(x, y, w, h);
+  c.restore();
+
+  c.save();
+  c.translate(W, 0);
+  c.scale(-1, 1);                       // back out of the mirror, for the text
+  c.fillStyle = colour;
+  c.font = '600 9px ui-monospace, monospace';
+  c.globalAlpha = 0.95;
+  // Kept inside the panel. A box against the edge of frame is exactly the
+  // case worth reading — it is the one whose label says how much of the hand
+  // is still visible — and it is also the one whose label would fall off.
+  const textWidth = c.measureText(label).width;
+  const lx = Math.max(2, Math.min(W - x - w, W - textWidth - 2));
+  c.fillText(label, lx, Math.max(9, y - 3));
+  c.restore();
+}
+
 export class CameraPanel {
   constructor({ onToggle, onRecalibrate, onRatio, onZeroPedals }) {
     this.root = document.getElementById('camera');
@@ -105,6 +147,19 @@ export class CameraPanel {
       const foot = feet?.[side];
       if (!foot) continue;
       const faded = foot.visibility < 0.55;
+
+      if (this.boxes) {
+        const box = footBox(foot);
+        ctx.globalAlpha = faded ? 0.45 : 1;
+        drawBox(ctx, box, {
+          colour: tone, W: w, offsetX: 0, offsetY: 0, dw: w, dh: h,
+          // The model's own confidence, since a foot it is unsure about is
+          // the commonest reason a pedal will not move.
+          label: `${side} ${Math.round(foot.visibility * 100)}%` +
+            (boxClipped(box) ? ' · cut off' : ''),
+        });
+      }
+
       ctx.globalAlpha = faded ? 0.3 : 1;
       ctx.strokeStyle = tone;
       ctx.fillStyle = tone;
@@ -233,6 +288,9 @@ export class CameraPanel {
    * @param {import('../vision/handtracker.js').HandTracker} tracker
    * @param {import('../input/handsource.js').HandTrackingSource} source
    */
+  /** Whether to outline what the trackers found. Off unless asked for. */
+  setBoxes(on) { this.boxes = !!on; }
+
   draw(video, tracker, source, shifter) {
     const c = this.ctx;
     const { width: W, height: H } = this.canvas;
@@ -276,6 +334,17 @@ export class CameraPanel {
       const anchor = px(hand.anchor);
       c.beginPath(); c.arc(anchor.x, anchor.y, 7, 0, Math.PI * 2);
       c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.stroke();
+
+      if (this.boxes) {
+        const box = handBox(hand);
+        const seen = visibleFraction(box);
+        drawBox(c, box, {
+          colour, W,
+          offsetX: (W - dw) / 2, offsetY: (H - dh) / 2, dw, dh,
+          label: `${hand.handedness?.toLowerCase() ?? 'hand'} ${Math.round(hand.grip * 100)}%` +
+            (boxClipped(box) ? ` · ${Math.round(seen * 100)}% in shot` : ''),
+        });
+      }
     }
 
     // The line the steering angle is actually read from.

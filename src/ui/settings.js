@@ -14,6 +14,8 @@ export const DEFAULTS = {
   flaps: true,
   /** Throttle and brake read from the driver's feet. */
   pedals: true,
+  /** Outline what the trackers found, in both camera views. */
+  boxes: false,
   /** Panels the driver has rolled up. Camera panels keep tracking while rolled. */
   collapsed: {},
   /** Panels hidden outright. */

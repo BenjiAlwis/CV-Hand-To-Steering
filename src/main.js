@@ -166,6 +166,7 @@ async function main() {
   };
   const shifter = new Shifter(handSource, { onShift: shift });
   shifter.enabled = settings.get('flaps');
+  camera.setBoxes(settings.get('boxes'));
 
   /**
    * Works out which camera does which job.
@@ -214,6 +215,7 @@ async function main() {
   // Acting on a changed setting, rather than only remembering it.
   settings.onChange((key, value) => {
     if (key === 'flaps') shifter.enabled = value;
+    if (key === 'boxes') camera.setBoxes(value);
     if (key === 'pedals') {
       // Turning pedals off stops the second camera outright: leaving a camera
       // running to feed something switched off would be the wrong trade, and
@@ -352,7 +354,7 @@ async function main() {
   Object.assign(window, {
     app, rig, controller, sim, environment, tracker, handSource, shifter,
     footTracker, pedals, assignCamera, refreshCameras,
-    settings, chrome, settingsPanel,
+    settings, chrome, settingsPanel, camera,
   });
   Object.defineProperty(window, 'wheel', { get: () => rig.wheel, configurable: true });
 
