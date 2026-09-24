@@ -194,8 +194,8 @@ export class CameraPanel {
       const n = [t?.seen, br?.seen].filter(Boolean).length;
       const best = Math.max(t?.visibility ?? 0, br?.visibility ?? 0);
       this.setFootStatus(
-        n === 2 ? 'both feet tracking'
-          : n === 1 ? 'one foot tracking'
+        n === 2 ? (source === 'silhouette' ? 'both feet, by shape' : 'both feet tracking')
+          : n === 1 ? (source === 'silhouette' ? 'one foot, by shape' : 'one foot tracking')
             : !tracker.sawPerson ? 'nobody in the foot camera'
               : `feet not clear enough (${Math.round(best * 100)}%)`,
         n ? 'live' : 'busy',
@@ -205,8 +205,15 @@ export class CameraPanel {
     // not move is nearly always a camera in the wrong place rather than a
     // driver doing the wrong thing.
     const th = pedals?.state?.throttle, br = pedals?.state?.brake;
-    this.footHintEl.textContent = advice?.ok
-      ? `heels down, pivot at the ankle · R ${Math.round((th?.visibility ?? 0) * 100)}% L ${Math.round((br?.visibility ?? 0) * 100)}%`
+    // Which source is driving is worth saying: the pedals read joints when
+    // the pose graph has them and the foot's silhouette when it does not, and
+    // those behave differently enough that knowing which is which explains a
+    // pedal that feels wrong.
+    const source = th?.from ?? br?.from;
+    this.footHintEl.textContent = advice?.ok || source === 'silhouette'
+      ? (source === 'silhouette'
+          ? 'reading the shape of your feet — no skeleton on this view'
+          : `heels down, pivot at the ankle · R ${Math.round((th?.visibility ?? 0) * 100)}% L ${Math.round((br?.visibility ?? 0) * 100)}%`)
       : advice?.message ?? 'right foot throttle, left foot brake';
     this.footHintEl.classList.toggle('coaching', !!advice && !advice.ok);
     if (tracker.settings) {

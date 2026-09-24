@@ -8,7 +8,7 @@
  * foot leaves frame, and the car's response to being driven can all be
  * checked directly.
  */
-import { footMetrics, PedalCalibrator, POSE, framingAdvice } from '../src/vision/footmath.js';
+import { footMetrics, PedalCalibrator, POSE, framingAdvice, silhouettePitch } from '../src/vision/footmath.js';
 import { PedalSource } from '../src/input/pedalsource.js';
 import { resolveAssignment } from '../src/vision/devices.js';
 import { CarSim } from '../src/sim/carsim.js';
@@ -239,6 +239,63 @@ console.log('\nframing advice');
   ok('missing feet outrank edges', code({ sawPerson: true,
     left: foot(0.01, 0.5, 0.12, 0.05), right: foot(0.6, 0.5, 0.12, 0.05) }) === 'no-feet');
   ok('no person outranks everything', code({ sawPerson: false, left: foot(0.3, 0.5, 0.45, 0.9) }) === 'no-person');
+}
+
+console.log('\nfalling back to the silhouette');
+{
+  const blob = (y0, y1, cy) => ({ y0, y1, cy, x0: 0.3, x1: 0.5, side: 'right', confidence: 0.8 });
+
+  ok('a level foot reads zero', Math.abs(silhouettePitch(blob(0.2, 0.8, 0.5))) < 1e-9);
+  ok('mass high reads as lifted', silhouettePitch(blob(0.2, 0.8, 0.35)) > 0);
+  ok('mass low reads as pressed', silhouettePitch(blob(0.2, 0.8, 0.65)) < 0);
+  // The reason it is a fraction of the region's own height, and not the
+  // centroid's position in the frame: neither how big the foot is nor where
+  // it sits should change the pedal.
+  ok('it does not care how big the foot is in frame',
+    Math.abs(silhouettePitch(blob(0.0, 0.3, 0.075)) - silhouettePitch(blob(0.4, 1.0, 0.55))) < 1e-9);
+  ok('a region too flat to read is refused', silhouettePitch(blob(0.5, 0.51, 0.505)) === null);
+  ok('and so is nothing at all', silhouettePitch(null) === null);
+
+  // The pose graph wins when it has an answer; the silhouette covers when it
+  // does not, which on a camera close to the floor is most of the time.
+  const tracker = { latest: null, boxes: [], running: true };
+  const pedals = new PedalSource({ tracker });
+  const dt = 1 / 60;
+  const run = (seconds) => { for (let i = 0; i < seconds * 60; i++) pedals.read(dt); };
+
+  const postPose = (deg) => {
+    tracker.latest = {
+      right: footMetrics(makeFoot('right', deg), 'right'),
+      left: footMetrics(makeFoot('left', deg), 'left'),
+      at: performance.now(), captureAt: performance.now(),
+    };
+  };
+  const postBoxes = (cy) => {
+    tracker.boxes = [
+      { ...blob(0.2, 0.8, cy), side: 'right' },
+      { ...blob(0.2, 0.8, cy), side: 'left' },
+    ];
+  };
+
+  postPose(8); postBoxes(0.5); run(1);
+  ok('with both available the joints are used', pedals.state.throttle.from === 'pose');
+
+  // Pose goes away, as it does the moment the camera cannot see a person.
+  tracker.latest = { right: null, left: null, at: performance.now(), captureAt: performance.now() };
+  postBoxes(0.35); run(1);
+  ok('without joints it falls back to the shape', pedals.state.throttle.from === 'silhouette');
+  ok('and reads the lifted foot as off the pedal', pedals.throttle < 0.05,
+    pedals.throttle.toFixed(2));
+
+  postBoxes(0.66); run(0.8);
+  ok('pressing down opens the pedal through the fallback', pedals.throttle > 0.7,
+    pedals.throttle.toFixed(2));
+
+  // And with neither, it closes rather than holding the last reading.
+  tracker.boxes = [];
+  run(0.6);
+  ok('with nothing at all the pedal closes', pedals.throttle === 0);
+  ok('and it says it has no source', pedals.state.throttle.from === null);
 }
 
 console.log('\ncamera assignment');

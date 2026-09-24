@@ -175,9 +175,12 @@ async function main() {
   const shifter = new Shifter(handSource, { onShift: shift });
   shifter.enabled = settings.get('flaps');
   camera.setBoxes(settings.get('boxes'));
-  // The box detector is a second model on the same GPU, so it is only loaded
-  // when boxes are actually being looked at.
-  const syncBoxDetector = () => footTracker.enableBoxes(settings.get('boxes') && footTracker.running)
+  // The segmentation detector is a second model on the same GPU, so it loads
+  // only when something needs it — which is now either drawing boxes or
+  // driving the pedals, since the pedals fall back to its silhouette wherever
+  // the pose graph cannot find a person to hang a foot on.
+  const syncBoxDetector = () => footTracker
+    .enableBoxes((settings.get('boxes') || settings.get('pedals')) && footTracker.running)
     .catch(() => { /* the panel still has the skeleton */ });
 
   /**
@@ -238,6 +241,7 @@ async function main() {
       // running to feed something switched off would be the wrong trade, and
       // the tally light staying on would be worse.
       if (value) startFeet(); else footTracker.stop();
+      syncBoxDetector();
     }
   });
 

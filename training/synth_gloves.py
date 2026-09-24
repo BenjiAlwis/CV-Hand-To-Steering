@@ -219,7 +219,13 @@ def place_camera(rng, target, radius):
     # distance in metres. Picking a distance gave hands forty pixels across in
     # the middle of an empty backdrop — nothing like what a camera watching a
     # wheel sees, and nothing a detector trained on it would recognise.
-    fill = rng.uniform(0.30, 0.95)
+    # Measured: rendering at 256 and training at 416 upscales blur rather than
+    # adding detail, and a hand filling a third of that leaves adjacent finger
+    # joints three or four pixels apart — below what the keypoint head can
+    # resolve. Overfitting 64 images reached 0.07 pose mAP in 70 epochs, which
+    # is a model that cannot see what it is being asked to place. Bigger in
+    # frame, and rendered at the size it is trained at.
+    fill = rng.uniform(0.55, 0.95)
     distance = radius / max(0.05, fill * math.tan(camera_data.angle / 2))
 
     # All round the hand, and from below as often as from above, because a
@@ -341,7 +347,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--count", type=int, default=200)
     ap.add_argument("--out", default="dataset/synth")
-    ap.add_argument("--size", type=int, default=256)
+    ap.add_argument("--size", type=int, default=448)
     ap.add_argument("--samples", type=int, default=16)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--min-visible", type=int, default=12,

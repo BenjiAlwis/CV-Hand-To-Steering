@@ -236,3 +236,40 @@ export function framingAdvice({ sawPerson, left, right, gate = 0.30 } = {}) {
 
   return say(true, 'ok', 'both feet tracking');
 }
+
+/**
+ * A pedal signal from a silhouette, for when the pose graph has no feet.
+ *
+ * The segmentation detector finds feet a camera close to the floor can see
+ * and the pose graph cannot, because it does not need a person attached. What
+ * it gives back is a region, not joints — so there is no ankle to measure a
+ * pitch from, and the signal has to come out of the shape itself.
+ *
+ * What it uses is where the region's mass sits within its own height. A foot
+ * pivoting at the heel moves its bulk downward as the toe goes down and
+ * upward as it lifts, and expressing that as a fraction of the region's own
+ * height makes it independent of how big the foot is in frame and where in
+ * the picture it sits — the same reasons pitch was chosen over the toe's
+ * height when there were joints to work with.
+ *
+ * Returned the same way round as `footMetrics().pitch`: larger means lifted,
+ * so `PedalCalibrator` can take either without knowing which it has.
+ *
+ * NOT VALIDATED against a real foot camera. The arithmetic is tested; whether
+ * a foot working a pedal actually moves this number is not, because it needs
+ * a camera pointed at feet to find out. It is a fallback, used only where the
+ * alternative is a pedal that does not move at all.
+ *
+ * @param {{y0:number, y1:number, cy:number}} blob from `findBlobs`
+ * @returns {number|null} roughly -1…1, or null if the region is too flat to read
+ */
+export function silhouettePitch(blob) {
+  if (!blob) return null;
+  const height = blob.y1 - blob.y0;
+  // A region a few pixels tall carries no shape to read, and dividing by it
+  // turns rounding into a pedal input.
+  if (!(height > 0.02)) return null;
+  const through = (blob.cy - blob.y0) / height;
+  // Centred on zero so it reads like an angle either side of level.
+  return clamp((0.5 - through) * 2, -1, 1);
+}

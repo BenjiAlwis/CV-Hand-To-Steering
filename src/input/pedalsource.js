@@ -13,7 +13,7 @@
  * both ease out over `releaseMs`, so a single dropped frame does not lift the
  * car off the power.
  */
-import { PedalCalibrator } from '../vision/footmath.js';
+import { PedalCalibrator, silhouettePitch } from '../vision/footmath.js';
 import { clamp } from '../vision/handmath.js';
 
 export class PedalSource {
@@ -69,8 +69,8 @@ export class PedalSource {
 
     /** Per-pedal detail for the HUD. */
     this.state = {
-      throttle: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0, rejected: 0 },
-      brake: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0, rejected: 0 },
+      throttle: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0, rejected: 0, from: null },
+      brake: { value: 0, seen: false, visibility: 0, pitch: 0, lostMs: 0, rejected: 0, from: null },
       tracking: false,
     };
   }
@@ -89,8 +89,15 @@ export class PedalSource {
     const latest = this.tracker?.latest;
     const fresh = latest && performance.now() - latest.at <= this.staleMs;
 
-    this._pedal('throttle', fresh ? latest.right : null, latest?.captureAt, dt);
-    this._pedal('brake', fresh ? latest.left : null, latest?.captureAt, dt);
+    // The pose graph first, because joints beat a silhouette when there are
+    // any. Where there are none — which on a camera close to the floor is
+    // most of the time — fall back to the shape the segmentation detector
+    // found, since the alternative is a pedal that never moves.
+    const boxes = this.tracker?.boxes ?? [];
+    const boxFor = (side) => boxes.find((b) => b.side === side) ?? null;
+
+    this._pedal('throttle', fresh ? latest.right : null, boxFor('right'), latest?.captureAt, dt);
+    this._pedal('brake', fresh ? latest.left : null, boxFor('left'), latest?.captureAt, dt);
 
     this.throttle = this.state.throttle.value;
     this.brake = this.state.brake.value;
@@ -98,16 +105,29 @@ export class PedalSource {
     return { throttle: this.throttle, brake: this.brake };
   }
 
-  _pedal(which, foot, captureAt, dt) {
+  _pedal(which, foot, box, captureAt, dt) {
     const s = this.state[which];
     const cal = this.calibrators[which];
     let believable = foot && foot.visibility >= this.minVisibility;
+
+    // Whichever source is answering, the rest of this reads one number.
+    let pitch = foot?.pitch;
+    let from = 'pose';
+    if (!believable) {
+      const silhouette = silhouettePitch(box);
+      if (silhouette !== null) {
+        pitch = silhouette;
+        believable = true;
+        from = 'silhouette';
+      }
+    }
+    s.from = believable ? from : null;
 
     // A step no ankle could take is a landmark that jumped, not a foot that
     // moved. Only checked against a foot we were already following: the first
     // reading after one comes back is a jump by definition.
     if (believable && s.seen) {
-      const step = Math.abs(foot.pitch - s.pitch);
+      const step = Math.abs(pitch - s.pitch);
       if (step > this.maxRate * Math.max(dt, 1 / 120)) {
         believable = false;
         s.rejected++;
@@ -128,13 +148,14 @@ export class PedalSource {
       }
       s.seen = false;
       s.visibility = foot?.visibility ?? 0;
+      s.from = null;
       return;
     }
 
     s.lostMs = 0;
     s.seen = true;
-    s.visibility = foot.visibility;
-    s.pitch = foot.pitch;
-    s.value = clamp(cal.update(foot.pitch, (captureAt ?? performance.now()) / 1000), 0, 1);
+    s.visibility = foot?.visibility ?? box?.confidence ?? 0;
+    s.pitch = pitch;
+    s.value = clamp(cal.update(pitch, (captureAt ?? performance.now()) / 1000), 0, 1);
   }
 }
