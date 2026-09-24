@@ -36,7 +36,11 @@ ANNOTATIONS = {
     "test": "https://storage.googleapis.com/openimages/v5/test-annotations-bbox.csv",
     "train": "https://storage.googleapis.com/openimages/v6/oidv6-train-annotations-bbox.csv",
 }
-CLASSES = {"/m/031n1": "foot", "/m/01nq26": "sock", "/m/09j5n": "footwear"}
+CLASSES = {
+    "/m/031n1": "foot", "/m/01nq26": "sock", "/m/09j5n": "footwear",
+    # Gloves, and bare hands as the control to measure them against.
+    "/m/0174n1": "glove", "/m/0k65p": "hand",
+}
 
 
 def annotations_for(split, cache_dir, wanted):
@@ -60,7 +64,8 @@ def main():
     ap.add_argument("--out", default="dataset/openimages")
     ap.add_argument("--splits", default="validation,test")
     ap.add_argument("--limit", type=int, default=0, help="max images per split, 0 for all")
-    ap.add_argument("--classes", default="foot,sock,footwear")
+    ap.add_argument("--classes", default="foot,sock,footwear",
+                    help="first one listed is the class the set is really about")
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--cache", default=".cache/openimages")
     args = ap.parse_args()
@@ -81,9 +86,10 @@ def main():
             by_image.setdefault(image_id, []).append(
                 {"label": label, "box": [round(x0, 5), round(y0, 5), round(x1, 5), round(y1, 5)]})
 
-        # Images actually containing a foot come first: the sock and footwear
-        # classes are there to broaden it, not to take it over.
-        order = sorted(by_image, key=lambda k: -sum(b["label"] == "foot" for b in by_image[k]))
+        # Images actually containing the class asked for come first; the
+        # others are there to broaden the set, not to take it over.
+        primary = args.classes.split(",")[0]
+        order = sorted(by_image, key=lambda k: -sum(b["label"] == primary for b in by_image[k]))
         if args.limit:
             order = order[: args.limit]
 

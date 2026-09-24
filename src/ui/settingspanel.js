@@ -29,6 +29,7 @@ export class SettingsPanel {
       flaps: document.getElementById('setFlaps'),
       pedals: document.getElementById('setPedals'),
       boxes: document.getElementById('setBoxes'),
+      gloves: document.getElementById('setGloves'),
       hands: document.getElementById('setHandsCamera'),
       feet: document.getElementById('setFeetCamera'),
       rescan: document.getElementById('setRescan'),
@@ -37,7 +38,7 @@ export class SettingsPanel {
       close: document.getElementById('setClose'),
     };
 
-    for (const key of ['flaps', 'pedals', 'boxes']) {
+    for (const key of ['flaps', 'pedals', 'boxes', 'gloves']) {
       this.el[key].checked = settings.get(key);
       this.el[key].addEventListener('change', () => settings.set(key, this.el[key].checked));
     }

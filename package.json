@@ -14,7 +14,8 @@
     "footcheck": "node tools/footcheck.mjs",
     "footlab": "node tools/footlab.mjs",
     "feet": "node tools/serve.mjs --page feet.html",
-    "footshots": "node tools/footshots.mjs"
+    "footshots": "node tools/footshots.mjs",
+    "glovelab": "node tools/glovelab.mjs"
   },
   "devDependencies": {
     "electron": "^44.4.3"

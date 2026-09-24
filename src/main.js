@@ -131,6 +131,13 @@ async function main() {
 
   const chrome = new PanelChrome(settings);
 
+  /**
+   * Measured: 0.1 across the board finds a gloved hand in 45% of pictures
+   * against 27% at the model's usual 0.5, and bare hands do better too.
+   */
+  const GLOVED = { detect: 0.1, presence: 0.1, track: 0.1 };
+  const BARE = { detect: 0.35, presence: 0.35, track: 0.30 };
+
   const tracker = new HandTracker({
     onStatus: ({ state, message }) => {
       const tone = state === 'error' ? 'error'
@@ -139,6 +146,7 @@ async function main() {
       camera.setStatus(message, tone);
     },
   });
+  if (settings.get('gloves')) tracker.confidence = { ...GLOVED };
   const handSource = new HandTrackingSource(tracker, { lock: controller.lock });
 
   // Highest priority of the three: if you are holding the wheel with your
@@ -221,6 +229,10 @@ async function main() {
   settings.onChange((key, value) => {
     if (key === 'flaps') shifter.enabled = value;
     if (key === 'boxes') { camera.setBoxes(value); syncBoxDetector(); }
+    if (key === 'gloves') {
+      tracker.setConfidence(value ? GLOVED : BARE)
+        .catch(() => { /* the old graph is still running */ });
+    }
     if (key === 'pedals') {
       // Turning pedals off stops the second camera outright: leaving a camera
       // running to feed something switched off would be the wrong trade, and

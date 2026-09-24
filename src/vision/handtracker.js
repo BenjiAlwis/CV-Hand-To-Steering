@@ -55,6 +55,35 @@ export class HandTracker {
     return this.running && this.latest !== null;
   }
 
+  /**
+   * Loosens the model for hands it cannot see the skin of.
+   *
+   * Measured against photographs of gloves actually being worn: the tracker
+   * found a hand in 27% of them at 0.5 confidence against 54% for bare hands,
+   * and dropping to 0.1 lifted the gloved figure to 45% while bare hands rose
+   * to 72%. Nothing else moved it. Contrast, sharpening and gamma all did
+   * worse than leaving the picture alone, and greyscale collapsed it to 10%,
+   * which says plainly how much of what the model recognises is skin colour.
+   * Cropping tightly to the glove halved it again — the palm detector wants
+   * the context around a hand, not a hand filling the frame.
+   *
+   * The cost of being generous is false positives, which the grip latch and
+   * the hand-separation check already throw out: a stray detection cannot
+   * steer unless it is also a closed fist a sensible distance from another.
+   *
+   * @param {{detect?: number, presence?: number, track?: number}} confidence
+   */
+  async setConfidence(confidence) {
+    const next = { ...this.confidence, ...confidence };
+    const same = Object.keys(next).every((k) => next[k] === this.confidence[k]);
+    if (same && this.landmarker) return;
+    this.confidence = next;
+    // The thresholds are baked in when the graph is built, so it has to be.
+    this.landmarker?.close?.();
+    this.landmarker = null;
+    await this.load();
+  }
+
   /** Loads the model. Safe to call more than once. */
   async load() {
     if (this.landmarker) return;

@@ -16,6 +16,8 @@ export const DEFAULTS = {
   pedals: true,
   /** Outline what the trackers found, in both camera views. */
   boxes: false,
+  /** Loosen the hand model for gloves, where it cannot read skin. */
+  gloves: false,
   /** Panels the driver has rolled up. Camera panels keep tracking while rolled. */
   collapsed: {},
   /** Panels hidden outright. */
