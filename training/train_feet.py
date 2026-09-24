@@ -120,6 +120,18 @@ class FeetDataset(Dataset):
             boxes, labels = kept_boxes, kept_labels
             W, H = image.size
 
+        # Quarter turns, which the small-angle rotation below never covers.
+        # Measured on the first trained model: upright it scored 0.470 F1 and
+        # turned ninety degrees it scored 0.269 — it had never been shown a
+        # sideways foot, having only ever been tilted by up to 25 degrees. A
+        # phone stood on the floor to watch a pedal is very often on its side.
+        if random.random() < 0.3 and boxes:
+            turns = random.choice([1, 2, 3])
+            for _ in range(turns):
+                image = image.transpose(Image.ROTATE_90)     # anticlockwise
+                boxes = [[b[1], W - b[2], b[3], W - b[0]] for b in boxes]
+                W, H = H, W
+
         # A phone on the floor is rarely level.
         if random.random() < 0.35 and boxes:
             angle = random.uniform(-25, 25)

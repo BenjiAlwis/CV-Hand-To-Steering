@@ -25,6 +25,23 @@ const BRAKE_MAX = 190;
 /** Where power runs out, and what the air costs. Together these set top speed. */
 const POWER_FADE = 380;
 const DRAG_K = 0.00012;
+/** How much of a gear's top speed the limiter tapers power over. */
+const LIMITER_BAND = 0.08;
+/** How hard an over-revving engine drags the car back, per km/h of overrun. */
+const OVER_REV = 2.2;
+/** How far past a gear's top speed a driver may drop into it. */
+const OVER_REV_ALLOWED = 1.06;
+/** The fraction of a gear's top speed at which the automatic box takes the next one. */
+const UPSHIFT_AT = 0.94;
+/**
+ * And where it drops back, as a fraction of the gear below's top speed.
+ *
+ * The gap between the two is what stops the box hunting. Upshifting at 0.96
+ * of a gear lands the car below the next gear's band, so a downshift rule
+ * written against that band fires immediately and the box oscillates — six to
+ * seven and back, twenty times in a minute, which it did.
+ */
+const DOWNSHIFT_AT = 0.88;
 
 export class CarSim {
   constructor() {
@@ -63,8 +80,22 @@ export class CarSim {
   update(dt, steer, pedals = null) {
     const load = Math.min(1, Math.abs(steer));
 
-    // Cornering scrubs speed: the more lock, the lower the ceiling.
-    const ceiling = 330 * (1 - 0.66 * Math.pow(load, 1.25));
+    /**
+     * What the gear the driver is in can actually pull to.
+     *
+     * This is what a gear ratio *is*, and it was missing: the engine kept
+     * making power however far past a gear's top speed the car went, so first
+     * gear held at full throttle reached 286 km/h against a ratio good for
+     * 78. Nothing in the model objected, because the only thing that had ever
+     * stopped it was the automatic box upshifting — and that stands down for
+     * two and a half seconds after a paddle pull, which is exactly when a
+     * driver is holding a gear on purpose.
+     */
+    const geared = RATIOS[this.gear - 1].top;
+
+    // Cornering scrubs speed: the more lock, the lower the ceiling. The gear
+    // caps it too, and whichever bites first is the one that matters.
+    const ceiling = Math.min(330 * (1 - 0.66 * Math.pow(load, 1.25)), geared);
 
     if (pedals) {
       this.throttle = clamp(pedals.throttle ?? 0, 0, 1);
@@ -73,18 +104,27 @@ export class CarSim {
 
       // Power falls away with speed — a car gains far less at 300 than at 100 —
       // and the gear the driver is in sets how much of it reaches the road.
-      const band = RATIOS[this.gear - 1];
-      const reach = this.speed / Math.max(1, band.top);
+      const reach = this.speed / Math.max(1, geared);
       // Short gears pull harder. Eighth at 40 km/h bogs, first at its limiter
       // has nothing left, and both of those should be felt.
-      const pull = 1.35 - 0.5 * clamp(reach, 0, 1.4);
+      const pull = 1.35 - 0.5 * clamp(reach, 0, 1);
       // Traction, which is what actually limits a car off the line. An F1
       // car cannot use its power below about 80 km/h because it has not yet
       // made the downforce to put it down — so this ramps in with speed
       // rather than being available from rest.
       const traction = 0.42 + 0.58 * clamp(this.speed / 80, 0, 1);
-      const power = ACCEL_MAX * this.throttle * pull * traction
+      // The limiter. Power tapers away over the last few percent of the gear
+      // and is gone at its top speed, which is the whole point of a ratio:
+      // the engine cannot turn faster, so the car cannot go faster, whatever
+      // the right foot is asking for.
+      const limiter = clamp((1 - reach) / LIMITER_BAND, 0, 1);
+      const power = ACCEL_MAX * this.throttle * pull * traction * limiter
         * Math.max(0, 1 - this.speed / POWER_FADE);
+
+      // Past what the gear will hold — rolling into a corner and grabbing a
+      // low gear — the wheels are driving the engine rather than the other
+      // way round, and it holds the car back hard.
+      const overRev = Math.max(0, this.speed - geared) * OVER_REV;
 
       // Brakes outrank the engine by a long way, as carbon discs do.
       const braking = BRAKE_MAX * this.brake;
@@ -96,12 +136,14 @@ export class CarSim {
       const over = Math.max(0, this.speed - ceiling);
       const scrub = over * 2.6;
 
-      this.speed += (power - braking - drag - scrub) * dt;
+      this.speed += (power - braking - drag - scrub - overRev) * dt;
       this.speed = clamp(this.speed, 0, 360);
     } else {
       this.throttle = 0;
       this.brake = 0;
       this.driven = false;
+      // `ceiling` already carries the gear's limit, so the car it drives
+      // itself into is one the gearbox could actually have got there in.
       const gap = ceiling - this.speed;
       // Power-limited acceleration, but braking is far stronger.
       const rate = gap > 0 ? 34 * (1 - this.speed / 360) : 96;
@@ -121,8 +163,17 @@ export class CarSim {
     // The automatic box stands down for a moment after a paddle pull,
     // otherwise it would immediately undo the gear the driver just chose.
     if (this._shiftCooldown === 0 && this._manualHold === 0) {
-      if (through > 0.99 && this.gear < RATIOS.length) { this.gear++; this._shiftCooldown = 0.16; }
-      else if (through < -0.04 && this.gear > 1) { this.gear--; this._shiftCooldown = 0.16; }
+      // Upshift on reaching the limiter, measured against this gear's own top
+      // speed rather than against how far through the band the car is. Those
+      // were the same thing until the limiter arrived; now power tapers away
+      // as the gear runs out, so the car settles just short of its top and a
+      // threshold expressed as a fraction of the band was never crossed. The
+      // box stuck in second at 117 km/h with the throttle flat to the floor.
+      if (this.speed >= band.top * UPSHIFT_AT && this.gear < RATIOS.length) {
+        this.gear++; this._shiftCooldown = 0.16;
+      } else if (this.gear > 1 && this.speed < RATIOS[this.gear - 2].top * DOWNSHIFT_AT) {
+        this.gear--; this._shiftCooldown = 0.16;
+      }
     }
 
     const b = RATIOS[this.gear - 1];
@@ -160,12 +211,24 @@ export class CarSim {
 
   /**
    * A pull of a gear flap.
+   *
+   * A downshift into a gear that cannot hold the speed the car is already
+   * doing is refused, as a real gearbox refuses it. Allowing it would let a
+   * driver drop from eighth at 300 km/h into first, which in a car means a
+   * destroyed engine and in a model means an absurd number — the sim would
+   * have had to invent several hundred km/h of engine braking to cope with
+   * something that should never have been permitted.
+   *
+   * A little over the gear's top is allowed, because that is a real thing a
+   * driver does on the way into a corner, and the over-rev drag handles it.
+   *
    * @param {-1|1} direction
    * @returns {boolean} whether a gear was actually available that way
    */
   shift(direction) {
     const next = clamp(this.gear + direction, 1, RATIOS.length);
     if (next === this.gear) return false;
+    if (direction < 0 && this.speed > RATIOS[next - 1].top * OVER_REV_ALLOWED) return false;
     this.gear = next;
     this.lastShift = direction;
     this._shiftCooldown = 0.12;

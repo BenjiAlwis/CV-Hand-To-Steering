@@ -258,9 +258,15 @@ console.log('\ncamera assignment');
 console.log('\ndriving the car');
 {
   const dt = 1 / 60;
+  // A car placed at a speed has to be placed in a gear that will hold it.
+  // Before the ratios meant anything this did not matter and every test
+  // started in first; now 200 km/h in first is an over-revving engine being
+  // dragged back, which is correct and made a coasting test fail.
+  const TOPS = [78, 118, 158, 196, 232, 267, 298, 330];
   const drive = (pedals, seconds, start = 0, steer = 0) => {
     const c = new CarSim();
     c.speed = start;
+    c.gear = Math.max(1, TOPS.findIndex((top) => top >= start) + 1) || TOPS.length;
     for (let i = 0; i < seconds * 60; i++) c.update(dt, steer, pedals);
     return c;
   };
@@ -295,6 +301,108 @@ console.log('\ndriving the car');
 
   const t = drive({ throttle: 0.5, brake: 0 }, 3).telemetry;
   ok('telemetry carries the pedals', near(t.throttle, 0.5) && t.brake === 0 && t.driven === true);
+}
+
+console.log('\nthe gearbox');
+{
+  const dt = 1 / 60;
+  // The ratios the sim ships with. A gear cannot pull past its own top speed.
+  const TOPS = [78, 118, 158, 196, 232, 267, 298, 330];
+
+  /** Full throttle, with the driver holding one gear the way a paddle does. */
+  const held = (gear, seconds = 30) => {
+    const c = new CarSim();
+    for (let i = 0; i < seconds * 60; i++) {
+      while (c.gear < gear) c.shift(1);
+      c._manualHold = 3;
+      c.update(dt, 0, { throttle: 1, brake: 0 });
+    }
+    return c;
+  };
+
+  // The bug this is all for: first gear held flat reached 286 km/h against a
+  // ratio good for 78, because power was never limited by the gear at all.
+  const first = held(1);
+  ok('first gear cannot be driven past its ratio', first.speed <= TOPS[0] + 1,
+    `${first.speed.toFixed(0)} km/h vs ${TOPS[0]}`);
+  ok('and it does get there', first.speed > TOPS[0] * 0.95, `${first.speed.toFixed(0)} km/h`);
+
+  let allHeld = true, worst = '';
+  for (let g = 1; g <= 6; g++) {
+    const c = held(g, 25);
+    if (c.speed > TOPS[g - 1] + 1) { allHeld = false; worst = `gear ${g}: ${c.speed.toFixed(0)} > ${TOPS[g - 1]}`; }
+  }
+  ok('every gear holds its own ceiling', allHeld, worst);
+
+  // The automatic box has to climb the whole way, and settle.
+  const auto = new CarSim();
+  const gears = new Set();
+  for (let i = 0; i < 90 * 60; i++) { auto.update(dt, 0, { throttle: 1, brake: 0 }); gears.add(auto.gear); }
+  ok('the box climbs through all eight gears', gears.size === 8, `${gears.size} gears used`);
+  ok('and reaches a sensible top speed', auto.speed > 290 && auto.speed <= 330,
+    `${auto.speed.toFixed(0)} km/h`);
+  ok('in top gear', auto.gear === 8, `gear ${auto.gear}`);
+
+  // Hunting: upshifting at one threshold and downshifting at another that
+  // overlaps it makes the box oscillate, which it did — six to seven and back.
+  const cruise = new CarSim();
+  cruise.speed = 200; cruise.gear = 5;
+  let shifts = 0;
+  for (let i = 0; i < 30 * 60; i++) {
+    const was = cruise.gear;
+    cruise.update(dt, 0, { throttle: 0.42, brake: 0 });
+    if (cruise.gear !== was) shifts++;
+  }
+  ok('a steady cruise does not make it hunt', shifts <= 2, `${shifts} shifts in 30s`);
+
+  // Slowing down must walk back down the box, once each.
+  const slowing = new CarSim();
+  slowing.speed = 300; slowing.gear = 8;
+  const down = [];
+  for (let i = 0; i < 25 * 60; i++) {
+    const was = slowing.gear;
+    slowing.update(dt, 0, { throttle: 0, brake: 0.3 });
+    if (slowing.gear !== was) down.push(slowing.gear);
+  }
+  ok('slowing walks back down the box', down.join() === '7,6,5,4,3,2,1', down.join(' '));
+
+  // A downshift the gear cannot hold is refused, as a real box refuses it.
+  const fast = new CarSim();
+  fast.speed = 300; fast.gear = 8;
+  ok('8th to 7th at 300 is allowed', fast.shift(-1) === true);
+  ok('but it will not drop further than the speed allows',
+    fast.shift(-1) === false && fast.gear === 7, `gear ${fast.gear}`);
+
+  const spam = new CarSim();
+  spam.speed = 300; spam.gear = 8;
+  for (let i = 0; i < 8; i++) spam.shift(-1);
+  ok('spamming the downshift paddle cannot reach first at 300 km/h',
+    spam.gear >= 7, `gear ${spam.gear}`);
+
+  const low = new CarSim();
+  low.speed = 60; low.gear = 3;
+  ok('a downshift the gear can hold still works', low.shift(-1) === true && low.gear === 2);
+
+  // Over-revving: dropped into a gear a little too low, the engine holds back.
+  // Held there, so the box cannot rescue it by taking the next gear up —
+  // without the hold this passed for the wrong reason, the car simply
+  // upshifting and carrying on.
+  const overRev = new CarSim();
+  overRev.speed = 125; overRev.gear = 2;
+  const before = overRev.speed;
+  for (let i = 0; i < 60; i++) { overRev._manualHold = 3; overRev.update(dt, 0, { throttle: 1, brake: 0 }); }
+  ok('over the gear\'s limit the engine drags the car back, throttle or not',
+    overRev.speed < before - 2 && overRev.gear === 2,
+    `${before} → ${overRev.speed.toFixed(0)} in gear ${overRev.gear}`);
+  ok('and it settles at what the gear will hold',
+    Math.abs(overRev.speed - TOPS[1]) < 8, `${overRev.speed.toFixed(0)} vs ${TOPS[1]}`);
+
+  // And the self-driving car must respect gearing too.
+  const legacy = new CarSim();
+  legacy.gear = 1; legacy._manualHold = 999;
+  for (let i = 0; i < 20 * 60; i++) { legacy._manualHold = 999; legacy.update(dt, 0); }
+  ok('the self-driving car is bound by its gear as well', legacy.speed <= TOPS[0] + 1,
+    `${legacy.speed.toFixed(0)} km/h in first`);
 }
 
 console.log(failures === 0 ? '\nall pedal checks passed\n' : `\n${failures} pedal check(s) failed\n`);
