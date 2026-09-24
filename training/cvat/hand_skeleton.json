@@ -1,0 +1,388 @@
+[
+ {
+  "name": "hand",
+  "type": "skeleton",
+  "attributes": [
+   {
+    "name": "gloved",
+    "mutable": false,
+    "input_type": "checkbox",
+    "default_value": "false",
+    "values": [
+     "false"
+    ]
+   },
+   {
+    "name": "side",
+    "mutable": false,
+    "input_type": "select",
+    "default_value": "unknown",
+    "values": [
+     "unknown",
+     "left",
+     "right"
+    ]
+   }
+  ],
+  "sublabels": [
+   {
+    "name": "wrist",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "thumb_cmc",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "thumb_mcp",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "thumb_ip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "thumb_tip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "index_mcp",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "index_pip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "index_dip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "index_tip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "middle_mcp",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "middle_pip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "middle_dip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "middle_tip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "ring_mcp",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "ring_pip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "ring_dip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "ring_tip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "pinky_mcp",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "pinky_pip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "pinky_dip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "pinky_tip",
+    "type": "points",
+    "attributes": [
+     {
+      "name": "visibility",
+      "mutable": true,
+      "input_type": "select",
+      "default_value": "visible",
+      "values": [
+       "visible",
+       "occluded",
+       "outside"
+      ]
+     }
+    ]
+   }
+  ],
+  "svg": "<line x1=\"50\" y1=\"95\" x2=\"28\" y2=\"82\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"1\" data-node-to=\"2\"></line><line x1=\"28\" y1=\"82\" x2=\"17\" y2=\"70\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"2\" data-node-to=\"3\"></line><line x1=\"17\" y1=\"70\" x2=\"10\" y2=\"58\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"3\" data-node-to=\"4\"></line><line x1=\"10\" y1=\"58\" x2=\"5\" y2=\"47\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"4\" data-node-to=\"5\"></line><line x1=\"50\" y1=\"95\" x2=\"36\" y2=\"60\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"1\" data-node-to=\"6\"></line><line x1=\"36\" y1=\"60\" x2=\"33\" y2=\"45\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"6\" data-node-to=\"7\"></line><line x1=\"33\" y1=\"45\" x2=\"31\" y2=\"34\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"7\" data-node-to=\"8\"></line><line x1=\"31\" y1=\"34\" x2=\"30\" y2=\"24\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"8\" data-node-to=\"9\"></line><line x1=\"36\" y1=\"60\" x2=\"48\" y2=\"56\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"6\" data-node-to=\"10\"></line><line x1=\"48\" y1=\"56\" x2=\"48\" y2=\"40\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"10\" data-node-to=\"11\"></line><line x1=\"48\" y1=\"40\" x2=\"48\" y2=\"28\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"11\" data-node-to=\"12\"></line><line x1=\"48\" y1=\"28\" x2=\"48\" y2=\"17\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"12\" data-node-to=\"13\"></line><line x1=\"48\" y1=\"56\" x2=\"60\" y2=\"58\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"10\" data-node-to=\"14\"></line><line x1=\"60\" y1=\"58\" x2=\"62\" y2=\"43\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"14\" data-node-to=\"15\"></line><line x1=\"62\" y1=\"43\" x2=\"64\" y2=\"32\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"15\" data-node-to=\"16\"></line><line x1=\"64\" y1=\"32\" x2=\"65\" y2=\"21\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"16\" data-node-to=\"17\"></line><line x1=\"60\" y1=\"58\" x2=\"72\" y2=\"64\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"14\" data-node-to=\"18\"></line><line x1=\"72\" y1=\"64\" x2=\"76\" y2=\"52\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"18\" data-node-to=\"19\"></line><line x1=\"76\" y1=\"52\" x2=\"79\" y2=\"42\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"19\" data-node-to=\"20\"></line><line x1=\"79\" y1=\"42\" x2=\"82\" y2=\"33\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"20\" data-node-to=\"21\"></line><line x1=\"50\" y1=\"95\" x2=\"72\" y2=\"64\" stroke=\"#2fe07a\" stroke-width=\"0.6\" data-type=\"edge\" data-node-from=\"1\" data-node-to=\"18\"></line><circle r=\"1.6\" cx=\"50\" cy=\"95\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"1\" data-node-id=\"1\" data-label-name=\"wrist\"></circle><circle r=\"1.6\" cx=\"28\" cy=\"82\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"2\" data-node-id=\"2\" data-label-name=\"thumb_cmc\"></circle><circle r=\"1.6\" cx=\"17\" cy=\"70\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"3\" data-node-id=\"3\" data-label-name=\"thumb_mcp\"></circle><circle r=\"1.6\" cx=\"10\" cy=\"58\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"4\" data-node-id=\"4\" data-label-name=\"thumb_ip\"></circle><circle r=\"1.6\" cx=\"5\" cy=\"47\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"5\" data-node-id=\"5\" data-label-name=\"thumb_tip\"></circle><circle r=\"1.6\" cx=\"36\" cy=\"60\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"6\" data-node-id=\"6\" data-label-name=\"index_mcp\"></circle><circle r=\"1.6\" cx=\"33\" cy=\"45\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"7\" data-node-id=\"7\" data-label-name=\"index_pip\"></circle><circle r=\"1.6\" cx=\"31\" cy=\"34\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"8\" data-node-id=\"8\" data-label-name=\"index_dip\"></circle><circle r=\"1.6\" cx=\"30\" cy=\"24\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"9\" data-node-id=\"9\" data-label-name=\"index_tip\"></circle><circle r=\"1.6\" cx=\"48\" cy=\"56\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"10\" data-node-id=\"10\" data-label-name=\"middle_mcp\"></circle><circle r=\"1.6\" cx=\"48\" cy=\"40\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"11\" data-node-id=\"11\" data-label-name=\"middle_pip\"></circle><circle r=\"1.6\" cx=\"48\" cy=\"28\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"12\" data-node-id=\"12\" data-label-name=\"middle_dip\"></circle><circle r=\"1.6\" cx=\"48\" cy=\"17\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"13\" data-node-id=\"13\" data-label-name=\"middle_tip\"></circle><circle r=\"1.6\" cx=\"60\" cy=\"58\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"14\" data-node-id=\"14\" data-label-name=\"ring_mcp\"></circle><circle r=\"1.6\" cx=\"62\" cy=\"43\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"15\" data-node-id=\"15\" data-label-name=\"ring_pip\"></circle><circle r=\"1.6\" cx=\"64\" cy=\"32\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"16\" data-node-id=\"16\" data-label-name=\"ring_dip\"></circle><circle r=\"1.6\" cx=\"65\" cy=\"21\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"17\" data-node-id=\"17\" data-label-name=\"ring_tip\"></circle><circle r=\"1.6\" cx=\"72\" cy=\"64\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"18\" data-node-id=\"18\" data-label-name=\"pinky_mcp\"></circle><circle r=\"1.6\" cx=\"76\" cy=\"52\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"19\" data-node-id=\"19\" data-label-name=\"pinky_pip\"></circle><circle r=\"1.6\" cx=\"79\" cy=\"42\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"20\" data-node-id=\"20\" data-label-name=\"pinky_dip\"></circle><circle r=\"1.6\" cx=\"82\" cy=\"33\" fill=\"#ffffff\" stroke=\"#111\" stroke-width=\"0.3\" data-type=\"element node\" data-element-id=\"21\" data-node-id=\"21\" data-label-name=\"pinky_tip\"></circle>"
+ }
+]

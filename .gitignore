@@ -1,6 +1,7 @@
-node_modules/
 .DS_Store
+.cache/
 dataset/
+node_modules/
+runs/
 training/.venv/
 training/runs/
-.cache/

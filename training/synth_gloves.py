@@ -124,6 +124,16 @@ def build_hand(points, thickness):
     bmesh.ops.scale(bm, vec=(0.058, 0.085, thickness * 1.7), verts=palm["verts"])
     bmesh.ops.translate(bm, vec=Vector((-0.001, 0.043, 0.0)), verts=palm["verts"])
 
+    # A panel on the back of the hand, which is what makes front and back
+    # tellable apart. Without it the model could find a hand perfectly and
+    # still not know which end was the thumb: a featureless capsule seen from
+    # behind is its own mirror image, so the keypoint order is genuinely
+    # ambiguous and nothing can be learned from it. Gloves have a different
+    # back from a palm; so does this, now.
+    back = bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(bm, vec=(0.050, 0.072, thickness * 0.5), verts=back["verts"])
+    bmesh.ops.translate(bm, vec=Vector((-0.001, 0.046, thickness * 1.5)), verts=back["verts"])
+
     bm.to_mesh(mesh)
     bm.free()
 
@@ -274,9 +284,14 @@ def render_one(index, args, rng, out_dir):
     hand = build_hand(local, thickness)
     hand.data.materials.append(glove_material(rng))
 
-    # Put the hand anywhere, any way up.
-    hand.rotation_euler = Euler((rng.uniform(0, math.tau),
-                                 rng.uniform(0, math.tau),
+    # Turned, but not arbitrarily. A hand on a wheel is not at a random
+    # orientation in space, and rendering it that way made the keypoints
+    # unlearnable — detection reached 0.99 mAP while pose stayed at zero,
+    # because from behind or edge-on there was nothing to say which finger was
+    # which. The camera still goes all the way round, so viewpoints stay
+    # varied; it is the hand that is no longer tumbling.
+    hand.rotation_euler = Euler((rng.uniform(-1.2, 1.2),
+                                 rng.uniform(-1.2, 1.2),
                                  rng.uniform(0, math.tau)))
     hand.location = Vector((rng.uniform(-0.03, 0.03),
                             rng.uniform(-0.03, 0.03),
