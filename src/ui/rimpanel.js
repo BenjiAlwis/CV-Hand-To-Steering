@@ -136,7 +136,7 @@ export class RimPanel {
       tone(el.prompt, result.ok ? 'ok' : 'warn');
     } else if (w.connected && !w.rotationKnown) {
       // Never quietly: an unknown rotation turns the rig the wrong distance.
-      setText(el.prompt, 'This wheel has not said how far it turns, so the rig can turn further than the rim. Click Calibrate.');
+      setText(el.prompt, 'Assuming ±360° until this wheel is calibrated. Click Calibrate to learn how far it really turns.');
       tone(el.prompt, 'warn');
     }
     el.prompt.hidden = !busy && !result && !(w.connected && !w.rotationKnown);

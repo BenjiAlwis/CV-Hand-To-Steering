@@ -30,7 +30,7 @@ import { SteeringSource } from './source.js';
 import {
   chooseDevice, defaultMapping, displayName, isLikelyWheel, loadWheels, saveWheels,
   steerDegrees, steerToAxis, buttonPressed, MappingWizard, LeadTracker, WIZARD_STEPS,
-  SweepCalibration, RotationMeasurement, MotionProfile,
+  SweepCalibration, RotationMeasurement, MotionProfile, ASSUMED_ROTATION,
 } from './wheels.js';
 import { OneEuroFilter } from '../vision/handmath.js';
 
@@ -48,16 +48,24 @@ const FOLLOW_PRIORITY = 2;
 const MAX_SLEW = 540;
 
 /**
- * How fast the motor sweeps the rim while calibrating, in axis units per
- * second: lock to lock in about four seconds on any rotation — brisk, but
- * slow enough to stop against a hand without a jolt.
+ * How fast the motor turns the rim when calibrating or centring, in degrees
+ * per second, and how hard it speeds up and slows down: full speed in a
+ * fifth of a second, eased in and out of every stop. Set in degrees so it
+ * feels the same on any wheel — a 472° rim crosses from lock to lock in
+ * about 1.6 s, a 900° one in 3.
  */
-const SWEEP_SPEED = 0.5;
+const SWEEP_DEG_SPEED = 300;
+const SWEEP_DEG_ACCEL = 1500;
+/** Before the rotation is known, assume a wide one: it only makes the sweep gentler. */
+const SWEEP_ASSUMED_ROTATION = 900;
 /**
- * And how hard it speeds up and slows down doing it, axis units per second²:
- * full sweep speed in about 0.4 s, eased in and out of every stop.
+ * The force for those moves, as a share of the wheel's: enough to keep the
+ * rim right behind its aim at that speed, never more than half.
  */
-const SWEEP_ACCEL = 1.2;
+const SWEEP_MIN_FORCE = 0.3;
+const SWEEP_MAX_FORCE = 0.5;
+/** How long the rim must sit within a degree of straight before Centre calls it done. */
+const CENTRE_SETTLE_MS = 150;
 /**
  * How hard the rim may be swung when it follows the rig, degrees per second²:
  * enough to keep up with a quick hand on the mouse, never a snap.
@@ -108,7 +116,7 @@ export class WheelSource extends SteeringSource {
     this._sweepAfterMeasure = false;
     this._centreAim = 0;
     /** The smooth path the motor's aim takes while calibrating or centring. */
-    this._sweep = new MotionProfile({ maxSpeed: SWEEP_SPEED, maxAccel: SWEEP_ACCEL });
+    this._sweep = new MotionProfile({ maxSpeed: 1, maxAccel: 1 });
     /** And while the rim follows the rig. */
     this._follow = new MotionProfile({ maxSpeed: MAX_SLEW, maxAccel: FOLLOW_ACCEL });
     /**
@@ -282,8 +290,7 @@ export class WheelSource extends SteeringSource {
     if (this.returning) {
       const target = this.mapping.steer.centre ?? 0;
       this._centreAim = this._sweep.step(target, Math.max(dt, 0));
-      const strength = Math.min(0.5, Math.max(0.2, this.force.strength));
-      this.native.follow(this.mapping.steer.pad, this._centreAim * (this.mapping.ffSign ?? 1), strength);
+      this.native.follow(this.mapping.steer.pad, this._centreAim * (this.mapping.ffSign ?? 1), this._sweepForce);
       this.driving = null;
       return;
     }
@@ -291,10 +298,7 @@ export class WheelSource extends SteeringSource {
     // back to the base's centre, whatever the rig is asking for.
     if (this.centring?.active && this.centring.drivable) {
       this._centreAim = this._sweep.step(this.centring.aim, Math.max(dt, 0));
-      // Firm enough to get there against friction, gentle enough to be a
-      // surprise nobody minds.
-      const strength = Math.min(0.5, Math.max(0.2, this.force.strength));
-      this.native.follow(this.mapping.steer.pad, this._centreAim * this.centring.ffSign, strength);
+      this.native.follow(this.mapping.steer.pad, this._centreAim * this.centring.ffSign, this._sweepForce);
       this.driving = null;
       return;
     }
@@ -400,7 +404,9 @@ export class WheelSource extends SteeringSource {
    * whether the app holds its port or asked alongside Boxflat.
    */
   _adoptBaseRotation() {
-    if (!this.isMoza || !this.native) return;
+    // Only when asked — by Calibrate. Until a wheel is calibrated the rig
+    // assumes ±360°, whatever the base happens to say on its own.
+    if (!this.awaitingBase || !this.isMoza || !this.native) return;
     const rotation = this.native.moza.values?.rotation;
     if (rotation > 0 && (rotation !== this.mapping.rotation || this.mapping.rotationFrom !== 'base')) {
       this.mapping = { ...this.mapping, rotation, rotationFrom: 'base' };
@@ -450,6 +456,7 @@ export class WheelSource extends SteeringSource {
     const raw = this._rawSteer(this.pads);
     this._centreAim = raw ?? 0;
     this._sweep.reset(this._centreAim);
+    this._paceSweep();
     this.centreResult = null;
     this.centring = new SweepCalibration({
       drivable: this.drivable, now: this.now(), sign: this.mapping.steer.sign ?? 1,
@@ -479,6 +486,7 @@ export class WheelSource extends SteeringSource {
     this.drive(null);
     this._centreAim = raw ?? 0;
     this._sweep.reset(this._centreAim);
+    this._paceSweep();
     this.centreResult = null;
     this.returning = { at: this.now(), stillSince: null, ref: null };
     return true;
@@ -492,7 +500,7 @@ export class WheelSource extends SteeringSource {
     // Within a degree of straight and settled: that is centred.
     const tol = 1 / (this.mapping.rotation / 2);
     if (r.ref === null || Math.abs(raw - r.ref) > 0.002) { r.ref = raw; r.stillSince = now; }
-    if (arrived && typeof raw === 'number' && Math.abs(raw - target) <= tol && now - r.stillSince >= 300) {
+    if (arrived && typeof raw === 'number' && Math.abs(raw - target) <= tol && now - r.stillSince >= CENTRE_SETTLE_MS) {
       this._endReturn(true, 'Centred.');
       this.onCentred();
     } else if (now - r.at > 6000) {
@@ -519,6 +527,32 @@ export class WheelSource extends SteeringSource {
     }
     if (!this.centring) return;
     this._endCentring(false, 'Calibration cancelled. Nothing was changed.');
+  }
+
+  /**
+   * Sets the calibration and centring moves' pace for this wheel: its
+   * degrees per second turned into axis units, which depend on its rotation.
+   */
+  _paceSweep() {
+    const half = (this.rotationKnown ? this.mapping.rotation : SWEEP_ASSUMED_ROTATION) / 2;
+    this._sweep.maxSpeed = SWEEP_DEG_SPEED / half;
+    this._sweep.maxAccel = SWEEP_DEG_ACCEL / half;
+  }
+
+  /** Firm enough to keep up and to get there against friction; never more than half. */
+  get _sweepForce() {
+    return Math.min(SWEEP_MAX_FORCE, Math.max(SWEEP_MIN_FORCE, this.force.strength));
+  }
+
+  /**
+   * A rotation nobody has confirmed is the assumed ±360°. Older versions
+   * stored a guess of 900° as if it were known, or took the base's rotation
+   * without a calibration; both start out assumed again, until calibrated.
+   */
+  _normalise(mapping) {
+    const from = mapping.rotationFrom;
+    const confirmed = from === 'set' || from === 'measured' || from === 'pad' || (from === 'base' && mapping.ends);
+    return confirmed ? mapping : { ...mapping, rotation: ASSUMED_ROTATION, rotationFrom: 'default' };
   }
 
   /** A Moza base, which can say its own rotation over its serial port. */
@@ -641,7 +675,7 @@ export class WheelSource extends SteeringSource {
       return;
     }
     const pad = this.pads.find((p) => p.id === id);
-    this.mapping = this.store.maps[id] ?? defaultMapping(pad);
+    this.mapping = this._normalise(this.store.maps[id] ?? defaultMapping(pad));
     this.onDevice({ type: 'connected', name: displayName(id), mapped: !!this.store.maps[id] });
   }
 }

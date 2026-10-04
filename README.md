@@ -175,8 +175,13 @@ them, because a wheel reports its position as a share of its travel. The
 degrees come from the rotation. A Moza base is asked for it directly, even
 while Boxflat is open: Boxflat opens the serial port shared, so the app can
 send a few read-only questions alongside it and keep the replies that arrive
-whole (each one is checksummed). This happens when the wheel connects, every
-30 seconds, and on Calibrate. Other wheels are measured or typed in.
+whole (each one is checksummed). This happens only when you click Calibrate.
+Other wheels are measured or typed in.
+
+Until a wheel has been calibrated, the rig assumes it turns ±360°, so full
+lock on the rim is full lock on the rig. Calibrate learns the wheel's real
+range (an R3 set to 472° turns ±236°), and the app remembers it from then on.
+Calibrate again if you change the wheel's rotation.
 
 Everything the motor does moves smoothly. Each movement eases in, cruises
 and eases out, so no step of a calibration sweep, no Centre and no reversal

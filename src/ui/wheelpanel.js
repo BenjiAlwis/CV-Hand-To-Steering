@@ -145,7 +145,7 @@ export class WheelPanel {
 }
 
 const ROTATION_NOTE = {
-  default: 'A guess — this wheel has not said how far it turns. If the rig turns further than the rim, Measure it, or type in what the wheel is set to.',
+  default: 'Assumed: ±360° until this wheel is calibrated. Calibrate on the WHEEL BASE panel learns its real range — or Measure it, or type it in.',
   base: 'Read from the base itself.',
   measured: 'Measured from a half turn of the rim.',
   set: 'As typed in. It has to match what the wheel itself is set to.',

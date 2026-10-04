@@ -32,6 +32,13 @@ const LOGITECH_WHEELS = new Set([
   'c266', 'c267', 'c26d', 'c26e', 'c268', 'c272',
 ]);
 
+/**
+ * What a wheel is taken to turn, lock to lock, until it has been calibrated:
+ * the rig's own full range, ±360°. Calibration replaces it with the wheel's
+ * real one, and that is remembered from then on.
+ */
+export const ASSUMED_ROTATION = 720;
+
 /** Rotation choices offered in the settings, in degrees lock to lock. */
 export const ROTATIONS = [180, 270, 360, 540, 720, 900, 1080];
 
@@ -80,15 +87,14 @@ export function defaultMapping(pad) {
       steer,
       up: { pad: pad.id, kind: 'button', index: 5 },
       down: { pad: pad.id, kind: 'button', index: 4 },
+      // A pad has no rim to calibrate: full stick is full lock, by design.
       rotation: 270,
-      rotationFrom: 'default',
+      rotationFrom: 'pad',
     };
   }
-  // Thrustmaster bases leave the factory at 1080°, most others at 900°.
-  const { vendor } = parseIds(pad.id);
   return { steer, up: null, down: null, neutral: null, reverse: null,
-           rotation: vendor === '044f' ? 1080 : 900,
-           // A guess until the base says, the driver measures it or sets it.
+           rotation: ASSUMED_ROTATION,
+           // Assumed until the wheel is calibrated, measured or set.
            rotationFrom: 'default' };
 }
 
@@ -842,7 +848,7 @@ export class SweepCalibration {
    * @param {number} o.now  ms
    * @param {number} [o.sign]  which way the axis runs: +1 when clockwise reads positive
    */
-  constructor({ drivable, now, sign = 1, ffSign = 1, stillMs = drivable ? 400 : 900, timeoutMs = drivable ? 9000 : 30000 }) {
+  constructor({ drivable, now, sign = 1, ffSign = 1, stillMs = drivable ? 250 : 900, timeoutMs = drivable ? 9000 : 30000 }) {
     Object.assign(this, { drivable, sign, stillMs, timeoutMs });
     /**
      * Which way the motor's spring runs against the axis. Force-feedback

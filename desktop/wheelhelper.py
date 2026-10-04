@@ -499,7 +499,6 @@ def main():
     last_moza_poll = 0.0
     INPUT_INTERVAL = 1 / 125   # bases report at up to 1 kHz; the page renders at 60
     following = None
-    last_shared = 0.0
     last_tick = time.monotonic()
 
     def scan():
@@ -520,11 +519,8 @@ def main():
             following = None
         prior = (moza.state, moza.holder)
         moza.check()
-        nonlocal last_shared
-        if moza.state == 'busy' and (prior[0] != 'busy' or time.monotonic() - last_shared > 30):
-            last_shared = time.monotonic()
-            if moza.shared_read(('rotation', 'max-angle')):
-                changed = True
+        # While something else holds the port, the base is asked only when the
+        # page asks — Calibrate — so Boxflat's connection is left alone.
         if changed:
             emit({'t': 'devices', 'list': [d.describe() for d in devices.values()]})
         if changed or prior != (moza.state, moza.holder):

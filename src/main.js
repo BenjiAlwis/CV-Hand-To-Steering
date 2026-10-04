@@ -191,7 +191,7 @@ async function main() {
     onShift: (direction) => shift(direction, 'paddle'),
     onGear: (gear) => selectGear(gear, 'wheel'),
     onDevice: ({ type, name, mapped }) => toast.show(type === 'connected'
-      ? `${name} connected${wheelSource.rotationKnown ? (mapped ? '' : ' — press S to map its paddles') : ' — click Calibrate on WHEEL BASE so the rig knows how far it turns'}`
+      ? `${name} connected${wheelSource.rotationKnown ? (mapped ? '' : ' — press S to map its paddles') : ' — assuming ±360° until you click Calibrate on WHEEL BASE'}`
       : `${name} disconnected`),
   });
   wheelSource.enabled = settings.get('wheel');

@@ -77,10 +77,12 @@ console.log('\nreading a wheel');
   const pad = wheelPad();
   const m = defaultMapping(pad);
   ok('a wheel steers on axis 0 by default', m.steer.index === 0);
-  ok('Thrustmaster defaults to 1080°', defaultMapping({ id: 'T300RS (Vendor: 044f Product: b66e)' }).rotation === 1080);
+  ok('until calibrated, any wheel is assumed to turn ±360°', m.rotation === 720 && m.rotationFrom === 'default'
+    && defaultMapping({ id: 'T300RS (Vendor: 044f Product: b66e)' }).rotation === 720);
 
   pad.axes[0] = 0.1;
-  ok('one-to-one with the rim: 0.1 of a 900° wheel is 45°', near(steerDegrees(m, [pad]), 45));
+  ok('so 0.1 of the axis reads 36°, and full lock 360°', near(steerDegrees(m, [pad]), 36)
+    && near(steerDegrees(m, [{ id: G29, axes: [1] }]), 360));
   ok('a missing device reads null rather than straight', steerDegrees(m, []) === null);
 }
 
@@ -335,7 +337,7 @@ console.log('\nthe wheel source, live');
   src.poll();
   ok('a wheel connects by itself', src.connected && events.at(-1)?.type === 'connected');
   const r = src.read();
-  ok('and steers, placed rather than sprung to', r && near(r.angle, 45 * Math.PI / 180) && r.snap === true);
+  ok('and steers, placed rather than sprung to', r && near(r.angle, 36 * Math.PI / 180) && r.snap === true);
 
   src.mapping = { ...src.mapping, up: { pad: G29, kind: 'button', index: 5 }, down: { pad: G29, kind: 'button', index: 4 } };
   press(pad, 5); src.poll(); src.poll();
@@ -492,7 +494,7 @@ console.log('\nthe two-way link');
   ok('the link says the rim follows', src.mode === 'following');
 
   // A hand stops the rim at 2° while the rig asks for 30°.
-  pad.axes[0] = 2 / 450;
+  pad.axes[0] = 2 / 360;
   for (let i = 0; i < 12; i++) { now += 16; src.poll(); src.drive(30, 0.016); }
   ok('holding the rim against it takes the lead', src.leading && src.priority === 30);
   ok('and the spring lets go', sent.at(-1) === 'release' && src.driving === null);
@@ -811,6 +813,62 @@ console.log('\nfinding straight ahead, and both ends');
   }
 
   {
+    // Start-up: ±360° assumed, even with the base able to say 472°; learned
+    // on Calibrate; remembered after that.
+    const { src, step } = rig({ known: false, id: R3 });
+    src.native.mozaRead = () => {};
+    src.native.moza = { state: 'busy', holder: 'Boxflat', values: { rotation: 472 } };
+    for (let i = 0; i < 30; i++) step();
+    ok('at start the wheel is assumed to turn ±360°, whatever the base could say',
+      src.rotation === 720 && !src.rotationKnown && lockRange(360, src.mapping).max === 360);
+    src.calibrateCentre();
+    for (let i = 0; i < 1500 && (src.centring || src.awaitingBase); i++) step();
+    ok('Calibrate learns the real range', src.rotation === 472 && lockRange(360, src.mapping).max < 240);
+    // A restart: a new source on the same stored mapping.
+    const again = new WheelSource({ getPads: () => src.pads, native: src.native });
+    again.poll();
+    ok('and the next start remembers it', again.rotation === 472 && again.rotationKnown
+      && Math.abs(lockRange(360, again.mapping).max - 236) < 2);
+  }
+
+  {
+    // Values stored by older versions start out assumed again until calibrated.
+    store = { 'wheelhouse.wheels': JSON.stringify({ last: null, maps: {
+      [R3]: { steer: { pad: R3, kind: 'axis', index: 0, centre: 0, sign: 1 }, rotation: 900 } } }) };
+    const pad = wheelPad(R3);
+    const old = new WheelSource({ getPads: () => [pad] });
+    old.poll();
+    ok('an old 900° guess becomes the ±360° assumption', old.rotation === 720 && !old.rotationKnown);
+    store = { 'wheelhouse.wheels': JSON.stringify({ last: null, maps: {
+      [R3]: { steer: { pad: R3, kind: 'axis', index: 0, centre: 0, sign: 1 }, rotation: 472, rotationFrom: 'base' } } }) };
+    const read = new WheelSource({ getPads: () => [pad] });
+    read.poll();
+    ok('as does a base reading taken without a calibration', read.rotation === 720);
+    store = { 'wheelhouse.wheels': JSON.stringify({ last: null, maps: {
+      [R3]: { steer: { pad: R3, kind: 'axis', index: 0, centre: 0, sign: 1 }, rotation: 450, rotationFrom: 'set' } } }) };
+    const typed = new WheelSource({ getPads: () => [pad] });
+    typed.poll();
+    ok('but one typed in is kept', typed.rotation === 450 && typed.rotationKnown);
+  }
+
+  {
+    // How long they take, on a 472° wheel like the R3.
+    let { src, step, now } = rig({ rotation: 472, start: 0.3 });
+    src.calibrateCentre();
+    const t0 = now();
+    while (src.centring && now() - t0 < 30000) step();
+    const cal = (now() - t0) / 1000;
+    ok('a full calibration takes under 7 s', src.centreResult?.ok && cal < 7, `${cal.toFixed(1)} s`);
+    ({ src, step, now } = rig({ rotation: 472, start: 0 }));
+    src.pads[0].axes[0] = 0.8;
+    src.centre();
+    const t1 = now();
+    while (src.returning && now() - t1 < 30000) step();
+    const cen = (now() - t1) / 1000;
+    ok('centring from three-quarters lock takes under 1.5 s', src.centreResult?.ok && cen < 1.5, `${cen.toFixed(1)} s`);
+  }
+
+  {
     // The Centre button: back to 0°, changing nothing about the calibration.
     const { src, step, pad, sent, centred } = rig();
     src.mapping = { ...src.mapping, steer: { ...src.mapping.steer, centre: 0.01 }, ends: { left: -1, right: 1 } };
@@ -943,7 +1001,7 @@ console.log('\nhow far this wheel really turns');
   let now = 0;
   const src = new WheelSource({ getPads: () => [pad], now: () => now });
   src.poll();
-  ok('until it is known, the rotation is flagged as a guess', !src.rotationKnown && src.rotation === 900);
+  ok('until it is known, the rotation is assumed (±360°) and flagged', !src.rotationKnown && src.rotation === 720);
   ok('and the rig would allow ±360°', lockFor(360, src.rotation) === 360);
   src.measureRotation();
   ok('while measuring, the rim does not steer the rig', src.read() === null && src.mode === 'measuring');
