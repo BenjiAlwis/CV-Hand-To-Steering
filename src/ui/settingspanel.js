@@ -30,6 +30,12 @@ export class SettingsPanel {
       pedals: document.getElementById('setPedals'),
       boxes: document.getElementById('setBoxes'),
       gloves: document.getElementById('setGloves'),
+      autoGears: document.getElementById('setAutoGears'),
+      autoThrottle: document.getElementById('setAutoThrottle'),
+      autoBrake: document.getElementById('setAutoBrake'),
+      queueDown: document.getElementById('setQueueDown'),
+      traction: document.getElementById('setTraction'),
+      abs: document.getElementById('setAbs'),
       hands: document.getElementById('setHandsCamera'),
       feet: document.getElementById('setFeetCamera'),
       rescan: document.getElementById('setRescan'),
@@ -38,7 +44,7 @@ export class SettingsPanel {
       close: document.getElementById('setClose'),
     };
 
-    for (const key of ['flaps', 'pedals', 'boxes', 'gloves']) {
+    for (const key of ['flaps', 'pedals', 'boxes', 'gloves', 'autoGears', 'autoThrottle', 'autoBrake', 'queueDown', 'traction', 'abs']) {
       this.el[key].checked = settings.get(key);
       this.el[key].addEventListener('change', () => settings.set(key, this.el[key].checked));
     }

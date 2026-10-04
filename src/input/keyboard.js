@@ -7,7 +7,7 @@
 import { SteeringSource } from './source.js';
 
 export class KeyboardSource extends SteeringSource {
-  constructor({ priority = 5, rate = 2.4, lock = 2.36 } = {}) {
+  constructor({ priority = 5, rate = 2.4, lock = Math.PI * 2 } = {}) {
     super('keyboard', priority);
     this.rate = rate;       // radians per second at full deflection
     this.lock = lock;

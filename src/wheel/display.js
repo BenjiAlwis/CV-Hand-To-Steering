@@ -56,7 +56,7 @@ export class Display {
   draw(t) {
     const c = this.ctx;
     const { W, H } = this;
-    const gear = t.gear ?? 'N';
+    const gear = t.gearLabel ?? t.gear ?? 'N';
     const speed = Math.round(t.speed ?? 0);
     const rpm = t.rpm ?? 0;
     const rpmMax = t.rpmMax ?? 15000;

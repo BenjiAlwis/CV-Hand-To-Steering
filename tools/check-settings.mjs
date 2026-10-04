@@ -28,8 +28,21 @@ console.log('\ndefaults');
   const s = new Settings();
   ok('gear flaps start on', s.get('flaps') === true);
   ok('pedals start on', s.get('pedals') === true);
-  ok('no panel starts rolled up', Object.keys(s.get('collapsed')).length === 0);
-  ok('no panel starts hidden', Object.keys(s.get('hidden')).length === 0);
+  ok('the controls list starts rolled up', s.isPanel('collapsed', 'controls') === true);
+  ok('and nothing else does', ['steering', 'rig', 'wheel', 'camera', 'foot', 'rim', 'pedalset']
+    .every((id) => !s.isPanel('collapsed', id)));
+  ok('the car readout starts hidden', s.isPanel('hidden', 'car') === true);
+  ok('and every other panel starts shown', ['steering', 'rig', 'wheel', 'controls', 'camera', 'foot', 'rim', 'pedalset']
+    .every((id) => !s.isPanel('hidden', id)));
+  ok('only the car readout starts hidden', Object.entries(s.get('hidden')).filter(([, v]) => v).map(([k]) => k).join() === 'car');
+
+  s.setPanel('hidden', 'car', false);
+  ok('showing it is remembered', new Settings().isPanel('hidden', 'car') === false);
+  store = { 'wheelhouse.settings': JSON.stringify({ hidden: { rig: true } }) };
+  const older = new Settings();
+  ok('a driver with older settings gets it hidden too, and keeps their own choices',
+    older.isPanel('hidden', 'car') === true && older.isPanel('hidden', 'rig') === true);
+  store = {};
 }
 
 console.log('\nremembering');
@@ -49,6 +62,12 @@ console.log('\nremembering');
 
   b.setPanel('collapsed', 'camera', false);
   ok('rolling a panel back down forgets it', new Settings().isPanel('collapsed', 'camera') === false);
+
+  b.setPanel('collapsed', 'controls', false);
+  ok('opening the controls list is remembered over its default', new Settings().isPanel('collapsed', 'controls') === false);
+
+  store = { 'wheelhouse.settings': JSON.stringify({ flaps: false, collapsed: {} }) };
+  ok('a driver with older stored settings gets it rolled up too', new Settings().isPanel('collapsed', 'controls') === true);
 }
 
 console.log('\nchange notifications');
@@ -71,6 +90,31 @@ console.log('\nchange notifications');
   off();
   s.set('flaps', false);
   ok('a removed listener stops hearing', seen.length === 2);
+}
+
+console.log('\ndriving aids');
+{
+  store = {};
+  const a = new Settings();
+  ok('the automatic gearbox starts off', a.get('autoGears') === false);
+  ok('auto acceleration starts off', a.get('autoThrottle') === false);
+  ok('auto braking starts off', a.get('autoBrake') === false);
+  ok('remembering refused downshifts starts off', a.get('queueDown') === false);
+  ok('traction control starts off', a.get('traction') === false);
+  ok('ABS starts off', a.get('abs') === false);
+  a.set('queueDown', true);
+  a.set('traction', true);
+  a.set('abs', true);
+  a.set('autoGears', true);
+  a.set('autoThrottle', true);
+  a.set('autoBrake', true);
+  a.set('flaps', false);
+  ok('they can be switched on for this session', a.get('autoThrottle') === true);
+  const b = new Settings();
+  ok('but every launch starts with them off again',
+    b.get('autoGears') === false && b.get('autoThrottle') === false && b.get('autoBrake') === false
+    && b.get('queueDown') === false && b.get('traction') === false && b.get('abs') === false);
+  ok('while ordinary settings are still remembered', b.get('flaps') === false);
 }
 
 console.log('\nwhen storage will not have it');

@@ -65,12 +65,197 @@ The panel shows what the tracker sees: the landmarks it found, a line between
 your palms (that line's angle *is* the steering), and how closed each hand is.
 If a grip will not engage, that panel tells you why.
 
+**Neutral and reverse.** The gears run R – N – 1 – 2 … 8. Shift down from
+first for neutral, and down again for reverse. Reverse only engages with the
+car stopped, so a stray pull at speed can't select it. <kbd>N</kbd> works
+too: tap it for neutral, hold it for reverse. A wheel's own buttons can do the same,
+mapped with **Paddles** on the WHEEL BASE panel; there's also a separate
+reverse button if you want one. Reverse engages only with the car all but
+stopped. The paddles take the car out of either into a forward gear: the
+lowest one the speed allows. In neutral the throttle only revs the engine,
+and the car coasts with no engine braking. Reverse is a slow gear (about
+60 km/h; no ratio is published, so that's an estimate). The rig starts parked
+in neutral.
+
+**Driving aids.** Settings (<kbd>S</kbd>) has six, and all of them are
+off every time the rig starts, whatever they were left at:
+
+- **Automatic gearbox.** With it off, gears change only when you change them,
+  with paddles, fingers or <kbd>Q</kbd>/<kbd>E</kbd>.
+- **Auto acceleration.** Accelerates toward the fastest the corner allows,
+  and backs off whenever you brake.
+- **Auto braking.** Brakes when the car is going faster than the corner
+  allows.
+
+- **Remember refused downshifts.** A downshift the car is too fast for is
+  refused, as F1 and paddle-shift road gearboxes refuse one that would
+  over-rev the engine. A message says so, with the speed the gear will
+  take. With this aid on, the request waits instead and the gear drops in
+  as soon as the speed allows: one gear per pull, forgotten after 3 seconds
+  or on an upshift.
+
+With all of them off and no pedals pressed, the car sits still.
+
+**How the car speeds up and slows down.** The car is modelled as forces on
+a mass, with published figures for the 2022–2025 cars where they exist. Every
+constant, and where it came from or why it is an estimate, is at the top of
+`src/sim/carsim.js`.
+
+- **Throttle.** The pedal asks for torque through a progressive map, so the
+  first half of the travel is fine control, and the engine answers within
+  about a tenth of a second. Power is flat across the top of the revs, where
+  the fuel-flow limit sets it, and torque is multiplied by the gear. So in
+  first the engine can push at four times what the rear tyres hold. As with
+  real F1 cars, which have had no traction control since 2008, too much
+  throttle in a low gear spins the rears, and a spinning tyre pulls less than
+  one fed in at the limit. Fed in at the limit, the car does the published
+  0–100 in 2.7 s, 0–200 in 5.0 s and 0–300 in 10.6 s. Stamped, 0–100 takes
+  3.5 s.
+- **Brakes.** Line pressure is proportional to the pedal, up to 100 bar.
+  Grip comes from the tyres and the load on them, and downforce is most of
+  that load at speed, so the limit falls as the car slows: about 5 g at
+  300 km/h, 3.7 g at 200, 2.5 g at 100 and 2 g at a crawl. Full pressure is
+  right at 300 km/h and far too much at 150. With no ABS (also not allowed
+  in F1), holding it locks the wheels, and a locked tyre stops worse. Ease
+  off as you slow, as F1 drivers do. Braked at the limit, 300 to 80 km/h
+  takes about 1.8 s.
+- **Brake temperature.** Carbon brakes only bite hot: a fraction of their
+  grip when cold, full between 400 and 1000 °C, fading above. They heat
+  under braking and cool in the airflow. The car starts with them warm.
+- **Lifting off.** Without the brake it slows at about 1 g from top speed,
+  almost all of it drag, easing to about 0.3 g at 100 km/h, where engine
+  braking takes over.
+
+**Traction control** and **anti-lock brakes** are in the driving aids, off
+by default. The **CAR** panel is hidden by default; switch it on in
+settings under **Panels on screen**, where every panel can be shown or
+hidden. It shows speed and gear, the g the car is pulling,
+the torque and brake pressure actually arriving, disc temperature, and
+**WHEELSPIN** / **LOCK-UP** when the tyres let go. Aids work the
+same pedals a driver would and never against one: your pedal input is used
+whenever it asks for more than the aid does.
+
+**A real steering wheel.** Plug in a USB wheel (Moza, Logitech, Thrustmaster,
+Fanatec and so on). The **WHEEL BASE** panel, top left, shows whether it is
+connected, with two needles on one dial: the rig's wheel in the team colour
+and the real rim in white. The link works both ways:
+
+- **Turn the rim** and the rig's wheel turns with it, degree for degree.
+- **Steer the rig any other way** (drag it, the keys, your hands on camera)
+  and the motor turns the real rim to match through a force-feedback spring.
+  Grab the rim and it lets go and follows you instead. The panel's LINK line
+  says which way it is running.
+
+On Linux the desktop app reads wheels through `desktop/wheelhelper.py`, a
+small helper with no dependencies beyond Python 3. It sees a wheel the moment
+it is plugged in and is what turns the rim. In a browser, or on other
+systems, wheels come through the Gamepad API instead. That can read a wheel
+but not turn it, and the wheel stays hidden until it is touched.
+
+**Centre** on the panel puts the rim back at 0°. The motor turns it to
+straight ahead and the rig's wheel centres with it, and nothing about the
+calibration changes. On a wheel the rig cannot turn, it takes wherever you
+are holding the rim as straight ahead. <kbd>R</kbd> and **Rig → Recentre
+Wheel** do the same. Hand tracking pauses while it runs.
+
+**Calibrate** on the panel sweeps the rim. The motor first brings it to the
+base's centre, and the rig's wheel centres with it. Then it turns the rim to
+full lock anticlockwise, then full lock clockwise, then back to the centre.
+The rig's wheel follows the rim the whole way.
+Each end is taken where the rim came to rest against its stop, and the
+centre where it settled becomes the rig's 0°. From then on the rig stops
+exactly where the rim does on each side, and the two sides can differ. On a
+wheel the rig cannot turn, the panel asks you to do the same sweep by hand.
+A rim that does not get where it is sent (a hand holding it, say) stops the
+calibration and nothing changes. Also under **Rig → Calibrate Real Wheel
+Centre** (⌘/Ctrl+Shift+0).
+
+A sweep finds the ends and the centre exactly, but not the degrees between
+them, because a wheel reports its position as a share of its travel. The
+degrees come from the rotation. A Moza base is asked for it directly, even
+while Boxflat is open: Boxflat opens the serial port shared, so the app can
+send a few read-only questions alongside it and keep the replies that arrive
+whole (each one is checksummed). This happens when the wheel connects, every
+30 seconds, and on Calibrate. Other wheels are measured or typed in.
+
+Everything the motor does moves smoothly. Each movement eases in, cruises
+and eases out, so no step of a calibration sweep, no Centre and no reversal
+of the rig starts or stops with a jolt. The helper glides the spring between
+the page's targets about 250 times a second, so the base is never pulled
+along in frame-sized steps. A light damper rides alongside while the motor
+drives, so the rim doesn't overshoot and wobble where it stops. The rig's
+wheel follows the rim through a filter that is steady when the rim is still
+and opens up at once for a fast turn.
+
+**Force** on the panel turns the rim-follows-rig direction on and off. Its
+strength is in settings (<kbd>S</kbd>), defaulting to 30%. A direct-drive
+base is strong, so keep hands clear of the rim the first time. The rim is
+slew-limited, and it goes slack if the app quits or crashes, because the
+kernel erases the spring when its owner closes.
+
+In settings, **Map controls** asks for one movement at a time (turn right,
+upshift, downshift) and records whichever input moved, so any wheel works.
+
+**Shifting works from the rim's paddles and from your fingers at the same
+time.** A wheel whose paddles are not mapped yet shows a **Paddles** button on
+the WHEEL BASE panel; click it and pull each paddle when asked. Boxflat does
+not record which buttons Moza's wheel paddles are, so this is needed once,
+even on a Moza. The finger flaps keep working while the real rim steers,
+because every input is read every frame, not just the one that is steering.
+A paddle pulled in front of the camera is also a finger the camera sees move,
+so a shift in the same direction from a different input within 300 ms counts
+as the same pull. The panel's **SHIFT** line shows the last gear change and
+what made it (`paddle`, `fingers`, `keys`), which is the quickest way to check
+both.
+
+**Real pedals** have their own **PEDAL SET** panel, beside STEERING. It shows
+whether they are connected, live throttle, brake and clutch bars, and what is
+driving the car right now: your pedals, the foot camera, or the car itself.
+Pedals behind a wheel base and pedal sets on their own USB cable both work.
+Moza pedals need no setup, because their axes are known from Boxflat's
+records: throttle, brake and clutch are `ABS_Z`, `ABS_RZ` and `ABS_THROTTLE`
+through a base, and `ABS_RX`, `ABS_RY` and `ABS_RZ` on their own. Anything else
+is set up once with **Calibrate**, which asks you to floor each pedal in turn
+and records how far each one really travels, so a full press reads 100%.
+A round only counts once the pedal is let back up, and it is watched for the
+whole press. If a second pedal moves at any point, even one that joins part
+way down, the round is thrown out and asked for again, with the reason on the
+panel. A pedal that already has a job is refused for another, so throttle,
+brake and clutch are always three different pedals. Two pedals sharing one
+combined axis, one pushing it each way, still count as two. Saved mappings get
+the same rule when they load. Each round says which input it found (`ABS_Z`
+and so on), and hovering a bar shows the same. Until
+a pedal is pressed the car keeps driving itself. After that, real pedals take
+over from the foot camera, and they hand the car back if they are unplugged,
+switched off or being calibrated. The clutch is shown but the car does not
+use it yet.
+
+**Moza bases** also get their settings read and written over the base's
+serial port: rotation range, game FFB strength and temperatures, plus a button
+that sets the base to 720° to match the rig's ±360°, so the rim stops where
+the rig does. This uses the serial
+protocol documented by [Boxflat](https://github.com/Lawstorant/boxflat).
+Boxflat holds that port while it runs, and two programs reading one serial
+port split each other's replies. So while Boxflat is open, Wheelhouse only
+sends the occasional read-only question and never changes a setting, and
+it steps aside entirely whenever Boxflat opens the port. Steering and force feedback do not need the port and
+work either way. On other wheels, or a Moza while Boxflat is open, the app cannot ask the
+wheel how far it turns. A wheel reports its position as a fraction of its own
+travel, so a 420° wheel at full lock reads the same as a 900° one. Until it is
+known, the rotation is a guess (900°, or 1080° for Thrustmaster), shown in
+amber with a **?** on the WHEEL BASE panel, and the rig turns too far. Click
+**measure** on that row: hold the rim straight, then turn it half a turn
+until it is upside down and hold it there. A wheel that stops before half a
+turn is asked for a quarter turn instead. Or type the wheel's rotation into
+**Rotation** in settings; any value from 90° to 2700° works.
+
 | | |
 |---|---|
 | drag | turn the wheel (swing around its centre) |
 | `A` / `D`, `←` / `→` | steer left / right |
 | `V` | camera on / off |
 | `Z` | re-zero your hands |
+| `N` | neutral; hold for reverse |
 | `T` | change wheel (Ferrari → Mercedes → Red Bull) |
 | `C` | free orbit camera |
 | `1` `2` `3` | driver / three-quarter / detail framing |
@@ -117,8 +302,12 @@ design decisions:
   widens into the body, a gentle flank taper, broad shoulders carrying the
   rev-light bar, and an arched top edge.
 - **About ±135° of lock**, i.e. three-quarters of a turn in total. A road car
-  gives you ±450°. This is why the wheel never spins in your hands, and why
-  `SPEC.lockDegrees` is the single number that maps hand angle to steering.
+  gives you ±450°. The rig itself goes further, to ±360°, a full turn each
+  way, so it can follow a sim or road wheel set to a wider rotation one to
+  one. `LOCK_DEGREES` in `src/wheel/spec.js` sets that ceiling. With a real
+  wheel connected, the rig turns only as far as that wheel does: half its
+  rotation each way, so a 270° wheel holds it to ±135° and a 540° wheel to
+  ±270°. The HUD scale and the car's full lock follow.
 - **Carbon fibre, aluminium, titanium and moulded rubber**, about 1.3 kg.
 - **Rev LEDs along the top edge** running green → red → blue, with marshalling
   flag LEDs at each end, all under one smoked lens.
@@ -133,6 +322,9 @@ design decisions:
 ```
 desktop/
   main.js                 Electron shell: window, menu, embedded server
+  hardware.js             runs the wheel helper and relays it to the page
+  preload.cjs             the page's one channel to the helper
+  wheelhelper.py          evdev input, force feedback, Moza serial (stdlib only)
 src/
   main.js                 bootstrap, frame loop, the stage-2 seam
   core/app.js             renderer, camera presets, post-processing
@@ -156,6 +348,10 @@ src/
     source.js             the interface every input implements
     shifter.js            gear flaps — finger-pull detection
     controller.js         arbitration, smoothing, the self-centring spring
+    wheels.js             recognising a USB wheel, reading it, the mapping wizard
+    wheelsource.js        a physical wheel, both directions — priority 2, or 30 while turned by hand
+    nativewheels.js       the desktop helper's view of wheels and Moza bases
+    pedalset.js           real pedals, as a device of their own
     handsource.js         camera steering — priority 20
     pointer.js            mouse / touch — priority 10
     keyboard.js           A / D — priority 5
@@ -167,6 +363,7 @@ tools/
   check-layout.mjs      spec-only collision check for the faceplate
   check-handmath.mjs    hand geometry tests, no camera needed
   check-steering.mjs    steering-source tests against a stub tracker
+  check-wheel.mjs       physical-wheel tests against a stub gamepad
 ```
 
 `wheel/teams.js` is the one file worth knowing. Every control's position, size,

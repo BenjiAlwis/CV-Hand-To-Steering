@@ -13,6 +13,8 @@ export class Hud {
       conf: document.getElementById('confValue'),
       fill: document.getElementById('steerFill'),
       needle: document.getElementById('steerNeedle'),
+      min: document.getElementById('steerMin'),
+      max: document.getElementById('steerMax'),
       fps: document.getElementById('fpsValue'),
       draws: document.getElementById('drawValue'),
       cam: document.getElementById('camValue'),
@@ -42,7 +44,7 @@ export class Hud {
     this.visible = true;
   }
 
-  update(dt, { controller, renderer, cameraName }) {
+  update(dt, { controller, renderer, cameraName, lockKnown = true }) {
     this._accum += dt;
     this._frames++;
     if (this._accum >= 0.5) {
@@ -58,6 +60,17 @@ export class Hud {
     const norm = controller.normalised;
 
     this.el.angle.textContent = deg.toFixed(1);
+    // The scale is the lock in force, which follows the connected wheel.
+    const lo = String(Math.round(-controller.minAngle * 180 / Math.PI));
+    const hi = String(Math.round(controller.maxAngle * 180 / Math.PI));
+    // With a wheel whose rotation is unknown the limits are a guess, and say so.
+    const q = lockKnown ? '' : '?';
+    if (this.el.max && (this.el.max.textContent !== `+${hi}${q}` || this.el.min.textContent !== `−${lo}${q}`)) {
+      this.el.max.textContent = `+${hi}${q}`;
+      this.el.min.textContent = `−${lo}${q}`;
+      this.el.max.classList.toggle('guess', !lockKnown);
+      this.el.min.classList.toggle('guess', !lockKnown);
+    }
     this.el.norm.textContent = norm.toFixed(3);
     this.el.src.textContent = controller.activeName;
     this.el.conf.textContent = controller.held ? controller.confidence.toFixed(2) : '—';

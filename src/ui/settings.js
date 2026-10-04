@@ -9,6 +9,13 @@
  */
 const STORE_KEY = 'wheelhouse.settings';
 
+/**
+ * Settings that start off at every launch, whatever they were left at. A car
+ * that drives off by itself the moment the rig opens is a surprise, so the
+ * driving aids are switched on per session, never remembered.
+ */
+export const SESSION_ONLY = ['autoGears', 'autoThrottle', 'autoBrake', 'queueDown', 'traction', 'abs'];
+
 export const DEFAULTS = {
   /** Gear flaps pulled with a finger. */
   flaps: true,
@@ -18,15 +25,40 @@ export const DEFAULTS = {
   boxes: false,
   /** Loosen the hand model for gloves, where it cannot read skin. */
   gloves: false,
-  /** Panels the driver has rolled up. Camera panels keep tracking while rolled. */
-  collapsed: {},
-  /** Panels hidden outright. */
-  hidden: {},
+  /** Steer with a wheel plugged into the machine, whenever one is found. */
+  wheel: true,
+  /** Let the rig turn a force-feedback rim to match it, and how hard. */
+  wheelForce: true,
+  wheelStrength: 0.3,
+  /** Drive the car with pedals plugged into the machine, whenever they are found. */
+  pedalSet: true,
+  /** The automatic gearbox. */
+  autoGears: false,
+  /** The car accelerates by itself toward whatever speed the corner allows. */
+  autoThrottle: false,
+  /** The car brakes by itself when going faster than the corner allows. */
+  autoBrake: false,
+  /** A downshift refused for speed waits and lands once the car has slowed. */
+  queueDown: false,
+  /** Never lets the rear tyres spin under power. Banned in F1 since 2008. */
+  traction: false,
+  /** Never lets the tyres lock under braking. Not allowed in F1. */
+  abs: false,
+  /**
+   * Panels the driver has rolled up. Camera panels keep tracking while rolled.
+   * The key list starts rolled up: it is reference, not something to watch.
+   */
+  collapsed: { controls: true },
+  /**
+   * Panels hidden outright. The car readout starts hidden — it is for
+   * looking under the hood, not for driving by.
+   */
+  hidden: { car: true },
 };
 
 export class Settings {
   constructor() {
-    this.values = { ...DEFAULTS, collapsed: {}, hidden: {} };
+    this.values = { ...DEFAULTS, collapsed: { ...DEFAULTS.collapsed }, hidden: { ...DEFAULTS.hidden } };
     this._listeners = new Set();
     this.load();
   }
@@ -35,11 +67,14 @@ export class Settings {
     try {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
       if (raw && typeof raw === 'object') {
+        for (const key of SESSION_ONLY) delete raw[key];
         this.values = {
           ...DEFAULTS,
           ...raw,
-          collapsed: { ...(raw.collapsed ?? {}) },
-          hidden: { ...(raw.hidden ?? {}) },
+          // Defaults first, so a panel that starts rolled up does so for a
+          // driver who has never touched it — and a stored choice wins.
+          collapsed: { ...DEFAULTS.collapsed, ...(raw.collapsed ?? {}) },
+          hidden: { ...DEFAULTS.hidden, ...(raw.hidden ?? {}) },
         };
       }
     } catch { /* nothing stored yet, or storage is unavailable */ }
@@ -62,8 +97,9 @@ export class Settings {
 
   /** @param {'collapsed'|'hidden'} group */
   setPanel(group, id, value) {
-    const next = { ...this.values[group] };
-    if (value) next[id] = true; else delete next[id];
+    // Stored either way, not deleted when false: a panel that starts rolled
+    // up and was opened has to stay open, which an absent key cannot say.
+    const next = { ...this.values[group], [id]: !!value };
     this.values[group] = next;
     this.save();
     this._emit(group, next);

@@ -10,7 +10,12 @@
  * simpler and less brittle than registering a custom protocol.
  */
 import { app, BrowserWindow, Menu, shell, session, systemPreferences } from 'electron';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startServer } from '../tools/serve.mjs';
+import { Hardware } from './hardware.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 app.setName('Wheelhouse');
 
@@ -20,6 +25,9 @@ let server = null;
 let win = null;
 
 let creating = false;
+
+/** Reads and drives a wheel plugged into this machine. Created once the app is ready. */
+let hardware = null;
 
 async function createWindow() {
   if (creating || (win && !win.isDestroyed())) return;
@@ -62,7 +70,9 @@ async function createWindow() {
       trafficLightPosition: { x: 18, y: 20 },
       show: false,
       webPreferences: {
-        // The page needs nothing from Node, so it gets nothing from Node.
+        // The page needs nothing from Node, so it gets nothing from Node —
+        // only the preload's narrow channel to the wheel helper.
+        preload: path.join(HERE, 'preload.cjs'),
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
@@ -75,6 +85,7 @@ async function createWindow() {
     // and leave the window built but permanently hidden.
     win.once('ready-to-show', () => win?.show());
     win.on('closed', () => { win = null; });
+    hardware.attach(win.webContents);
 
     // Anything that would open a new window goes to the real browser instead.
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -175,12 +186,15 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Shift Up', accelerator: 'CmdOrCtrl+Up', click: run('wheelhouse.shift(1)') },
         { label: 'Shift Down', accelerator: 'CmdOrCtrl+Down', click: run('wheelhouse.shift(-1)') },
+        { label: 'Neutral', accelerator: 'CmdOrCtrl+N', click: run('wheelhouse.neutral()') },
+        { label: 'Reverse', accelerator: 'CmdOrCtrl+Shift+N', click: run('wheelhouse.reverse()') },
       ],
     },
     {
       label: 'Rig',
       submenu: [
         { label: 'Recentre Wheel', accelerator: 'CmdOrCtrl+0', click: run('wheelhouse.recentre()') },
+        { label: 'Calibrate Real Wheel Centre', accelerator: 'CmdOrCtrl+Shift+0', click: run('wheelhouse.calibrateCentre()') },
         { label: 'Toggle Overlay', accelerator: 'CmdOrCtrl+/', click: run('wheelhouse.toggleHud()') },
       ],
     },
@@ -220,6 +234,7 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
+  hardware = new Hardware();
   buildMenu();
   createWindow();
 
@@ -229,6 +244,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', async () => {
+  hardware?.stop();
   await server?.close();
   server = null;
   // Quit on macOS too, rather than following the usual convention of staying
@@ -239,6 +255,7 @@ app.on('window-all-closed', async () => {
 });
 
 app.on('before-quit', async () => {
+  hardware?.stop();
   await server?.close();
   server = null;
 });

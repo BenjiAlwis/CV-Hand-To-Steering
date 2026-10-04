@@ -290,6 +290,11 @@ kbd{
   background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:5px;
 }
 .panel-roll:hover{background:rgba(255,255,255,.14);color:var(--ink)}
+/* #hud ignores the pointer so the scene can be dragged through it, and only
+   some panels opt back in. The roll-up button has to work on all of them —
+   without this it was drawn on CONTROLS, STEERING, RIG and WHEEL but could
+   not be clicked. */
+.panel-roll{pointer-events:auto}
 .panel-title::after{order:5}
 
 .panel.collapsed{padding-bottom:12px}
@@ -350,3 +355,124 @@ kbd{
 
 /* Framing advice reads as something to act on, not as a caption. */
 .cam-hint.coaching{color:#ffb545;letter-spacing:.02em;line-height:1.5;min-height:26px}
+
+/* ── physical wheel ───────────────────────────────── */
+.wheel-status{margin:0 0 10px}
+.wheel-status.live{color:#2fe07a}
+.wheel-live .pedal-row{margin-top:7px}
+.pedal-track.steer{position:relative}
+.pedal-track.steer i{position:absolute;top:0;background:var(--accent)}
+.wheel-prompt{color:var(--warn);font-size:11px;margin-top:10px}
+.wheel-buttons{display:flex;flex-wrap:wrap;gap:0 7px}
+
+.toast{
+  position:fixed;left:50%;top:22px;transform:translate(-50%,-8px);z-index:13;
+  padding:8px 14px;border-radius:8px;font-size:11px;letter-spacing:.04em;
+  background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(8px);
+  opacity:0;transition:opacity .25s ease,transform .25s ease;pointer-events:none;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ── the wheel-base panel ─────────────────────────── */
+.panel.rim{margin-top:10px;pointer-events:auto}
+.rim-head{display:flex;align-items:center;gap:9px}
+.rim-dot{flex:none;width:8px;height:8px;border-radius:50%;background:#56606e}
+.rim-name{min-width:0}
+.rim-name b{display:block;font-size:11.5px;font-weight:500;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.rim-name em{display:block;font-style:normal;font-size:9.5px;letter-spacing:.06em;color:var(--dim);margin-top:2px}
+.panel.rim[data-state="connected"] .rim-dot{background:#2fe07a;box-shadow:0 0 8px #2fe07a}
+.panel.rim[data-state="off"] .rim-dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.panel.rim[data-state="none"] .rim-link,
+.panel.rim[data-state="none"] .rim-chips{display:none}
+/* Two needles: the rig in the team colour, the real rim in white over it. */
+.rim-dial i.rim{background:#fff;box-shadow:0 0 6px rgba(255,255,255,.7);width:1.5px}
+.rim-dial i.rig{opacity:.85}
+.rim-chips{display:flex;gap:5px;margin-top:10px}
+.rim-chips span{font-size:8.5px;letter-spacing:.16em;padding:3px 6px;border-radius:4px;
+  color:#56606e;border:1px solid var(--line)}
+.rim-chips span[data-on="true"]{color:#2fe07a;border-color:rgba(47,224,122,.4)}
+.rim-chips span[data-on="busy"]{color:var(--warn);border-color:rgba(255,181,69,.4)}
+.cam-buttons button[aria-pressed="true"]{background:rgba(47,224,122,.14);border-color:rgba(47,224,122,.4)}
+
+.wheel-force{margin-top:12px}
+.wheel-strength{grid-template-columns:52px 1fr 34px}
+.wheel-strength input{width:100%;accent-color:#2fe07a}
+.wheel-strength b{font-size:10px;font-weight:500;color:var(--ink);text-align:right}
+.wheel-base{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.wheel-base-note{color:var(--warn)}
+
+/* ── the pedal-set panel ──────────────────────────── */
+.pedalset .pedalset-live{margin-top:4px}
+.pedalset .pedal-row{margin-top:8px}
+.pedal-track.clutch i{background:#4dd4ff}
+.pedalset-car{margin-top:6px;padding-top:7px;border-top:1px solid var(--line)}
+.pedalset-prompt{font-size:10.5px;line-height:1.5;color:var(--warn);margin:10px 0 0}
+.panel.pedalset[data-state="none"] .pedalset-live{display:none}
+.panel.pedalset[data-state="unmapped"] .rim-dot,
+.panel.pedalset[data-state="mapping"] .rim-dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.panel.pedalset[data-state="waiting"] .rim-dot,
+.panel.pedalset[data-state="driving"] .rim-dot{background:#2fe07a;box-shadow:0 0 8px #2fe07a}
+
+/* Two columns in the top left: steering over the wheel base, pedals beside them. */
+.hud-corner.tl{display:flex;gap:10px;align-items:flex-start}
+.hud-col > .panel:first-child{margin-top:0}
+
+/* Calibration: what is being asked for, what was found, what has to be redone. */
+.pedalset-prompt[data-tone="ok"]{color:#2fe07a}
+.pedalset-prompt[data-tone="warn"]{color:#ff6a5a}
+.pedalset-prompt[data-tone="ask"]{color:var(--warn)}
+.pedalset .pedal-row.asking span{color:var(--warn)}
+.pedalset .pedal-row.asking .pedal-track{box-shadow:0 0 0 1px rgba(255,181,69,.55)}
+/* A fixed width, so calibration messages wrap instead of stretching the panel. */
+.panel.rim{width:292px}
+
+/* Four buttons on the wheel-base panel: two rows of two. */
+.panel.rim:not(.pedalset) .cam-buttons{flex-wrap:wrap}
+.panel.rim:not(.pedalset) .cam-buttons button{flex:1 1 calc(33% - 5px);letter-spacing:.06em;padding:7px 4px}
+
+.aids-note{margin:0 0 10px}
+
+/* A downshift the gearbox turned down, or is holding until the speed allows. */
+#rimShift.refused{color:var(--warn)}
+
+/* ── the car panel ────────────────────────────────── */
+.car-speed{display:flex;align-items:baseline;gap:5px;margin-bottom:6px}
+.car-speed b{font-size:24px;font-weight:300;font-variant-numeric:tabular-nums;color:var(--ink)}
+.car-speed em{font-style:normal;font-size:9px;letter-spacing:.14em;color:var(--dim)}
+.car-speed span{margin-left:auto;font-size:18px;color:var(--accent);font-variant-numeric:tabular-nums}
+.car-warn{display:flex;gap:5px;margin-top:8px}
+.car-warn span{font-size:8.5px;letter-spacing:.14em;padding:3px 6px;border-radius:4px;color:#3c4450;border:1px solid var(--line)}
+.car-warn span[data-on="true"]{color:#ff6a5a;border-color:rgba(255,106,90,.55);box-shadow:0 0 8px rgba(255,106,90,.3)}
+#carDiscs[data-tone="cold"]{color:#4dd4ff}
+#carDiscs[data-tone="hot"]{color:#ff6a5a}
+.hud-col .panel.car{width:292px}
+#carGear.reverse{color:#ff6a5a}
+
+/* The columns space their own panels, so a hidden panel leaves no gap and
+   whichever comes first sits flush with the top. */
+.hud-col{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.hud-col > .panel{margin-top:0}
+
+/* Rotation: a guess shows as one. */
+#rimRotation.assumed, #wheelRotation.assumed, .wheel-rotation-note.assumed{color:var(--warn)}
+.corr-row.rot button{
+  font:inherit;font-size:8.5px;letter-spacing:.1em;padding:1px 5px;border-radius:4px;cursor:pointer;
+  background:rgba(255,255,255,.06);color:var(--dim);border:1px solid var(--line);
+}
+.corr-row.rot button:hover{color:var(--ink);background:rgba(255,255,255,.12)}
+.wheel-rotation{grid-template-columns:52px 70px 12px auto}
+.wheel-rotation input{width:100%;font:inherit;font-size:10.5px;color:#c8d2de;background:rgba(255,255,255,.05);
+  border:1px solid var(--line);border-radius:6px;padding:5px 6px}
+.wheel-rotation b{font-size:10px;color:var(--dim);font-weight:400}
+.wheel-rotation .set-button{margin-top:0}
+.wheel-rotation-note{margin:2px 0 8px}
+#steerMin.guess,#steerMax.guess{color:var(--warn)}
+/* The left column — steering, wheel base, pedal set, controls — can outgrow a
+   short window once everything is open, so it scrolls rather than running off
+   the bottom. It takes the pointer for that, but only over its own width. */
+.hud-corner.tl > .hud-col:first-child{
+  max-height:calc(100vh - 36px);overflow-y:auto;overflow-x:hidden;pointer-events:auto;
+  scrollbar-width:thin;scrollbar-color:rgba(150,170,200,.25) transparent;padding-right:2px;
+}
+.desktop .hud-corner.tl > .hud-col:first-child{max-height:calc(100vh - 70px)}

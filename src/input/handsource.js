@@ -49,7 +49,7 @@ export class HandTrackingSource extends SteeringSource {
     priority = 20,
     /** Wheel degrees per degree of arm rotation. 1 means the wheel matches you. */
     ratio = 1,
-    lock = Math.PI * 0.75,
+    lock = Math.PI * 2,
     /** Hands closer together than this are too unreliable to steer with. */
     minSpan = 1.6,
     /** A result older than this is treated as no result at all. */

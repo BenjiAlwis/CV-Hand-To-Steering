@@ -11,8 +11,12 @@ import { shellOutline } from './shell.js';
 export { LABEL_DROP };
 export { TEAMS, TEAM_IDS, DEFAULT_TEAM } from './teams.js';
 
-/** Total steering lock each way, in degrees — about three-quarters of a turn. */
-export const LOCK_DEGREES = 135;
+/**
+ * Total steering lock each way, in degrees: a full turn either side, 720°
+ * lock to lock. A real F1 wheel stops at about ±135°; the rig goes further so
+ * it can follow a road-car or sim wheel set to a wider rotation, one-to-one.
+ */
+export const LOCK_DEGREES = 360;
 
 /**
  * @param {string} teamId

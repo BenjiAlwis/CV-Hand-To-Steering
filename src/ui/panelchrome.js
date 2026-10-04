@@ -13,6 +13,9 @@
  */
 const TITLES = {
   steering: 'STEERING',
+  rim: 'WHEEL BASE',
+  pedalset: 'PEDAL SET',
+  car: 'CAR',
   rig: 'RIG',
   wheel: 'WHEEL',
   controls: 'CONTROLS',
@@ -55,7 +58,10 @@ export class PanelChrome {
   label(id) { return TITLES[id] ?? id; }
 
   toggle(id) {
-    this.settings.setPanel('collapsed', id, !this.settings.isPanel('collapsed', id));
+    const opening = this.settings.isPanel('collapsed', id);
+    this.settings.setPanel('collapsed', id, !opening);
+    // Opened at the foot of a column that scrolls, it would open out of sight.
+    if (opening) this.panels.get(id)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
   }
 
   /** Whether a panel is worth drawing into: on screen and not rolled up. */

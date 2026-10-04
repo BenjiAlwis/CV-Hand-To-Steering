@@ -12,7 +12,7 @@ const DEG = Math.PI / 180;
 
 export class SteeringController {
   constructor({
-    lockDegrees = 135,
+    lockDegrees = 360,
     stiffness = 320,      // how hard the wheel chases a held input
     damping = 30,
     returnStiffness = 46, // caster action when the wheel is let go
@@ -31,6 +31,12 @@ export class SteeringController {
     maxLead = 0.6,
   } = {}) {
     this.lock = lockDegrees * DEG;
+    /**
+     * The limits each way, radians. Usually ±lock; a calibrated wheel can
+     * have more travel one way than the other, and the rig follows it.
+     */
+    this.minAngle = -this.lock;
+    this.maxAngle = this.lock;
     this.stiffness = stiffness;
     this.damping = damping;
     this.returnStiffness = returnStiffness;
@@ -72,11 +78,21 @@ export class SteeringController {
   }
 
   update(dt) {
-    // Highest-priority source with something to say wins outright.
+    // Highest-priority source with something to say wins outright. Sorted
+    // every frame because a priority can change: a physical wheel jumps to
+    // the top while someone is turning it.
+    this.sources.sort((a, b) => b.priority - a.priority);
+    //
+    // Every source is read, every frame, even after one has won. A source's
+    // reading is not only its steering: the hand tracker's is also what the
+    // finger shifter watches, and skipping it whenever something above it
+    // was steering — the real rim, say — left the fingers looking at stale
+    // hands, so the flaps stopped working exactly when both hands were on
+    // the wheel.
     let winner = null, reading = null;
     for (const source of this.sources) {
       const value = source.read(dt);
-      if (value && value.confidence > 0.05) { winner = source; reading = value; break; }
+      if (!winner && value && value.confidence > 0.05) { winner = source; reading = value; }
     }
 
     if (reading) {
@@ -89,7 +105,7 @@ export class SteeringController {
         (reading.velocity ?? 0) * (this.damping / this.stiffness),
         -this.maxLead, this.maxLead,
       );
-      this.target = clamp(reading.angle + lead, -this.lock, this.lock);
+      this.target = clamp(reading.angle + lead, this.minAngle, this.maxAngle);
       // A source can ask for the wheel to be placed rather than driven to a
       // target. The camera uses it the moment your hands reappear: the wheel
       // matches where they actually are instead of spending a third of a
@@ -126,11 +142,36 @@ export class SteeringController {
       this.velocity += accel * h;
       this.angle += this.velocity * h;
 
-      if (this.angle > this.lock) { this.angle = this.lock; this.velocity = Math.min(0, this.velocity); }
-      if (this.angle < -this.lock) { this.angle = -this.lock; this.velocity = Math.max(0, this.velocity); }
+      if (this.angle > this.maxAngle) { this.angle = this.maxAngle; this.velocity = Math.min(0, this.velocity); }
+      if (this.angle < this.minAngle) { this.angle = this.minAngle; this.velocity = Math.max(0, this.velocity); }
     }
 
     return this.angle;
+  }
+
+  /**
+   * Changes how far the wheel turns each way, live — the rig follows whatever
+   * physical wheel is connected. Sources that keep their own angle are given
+   * the same limit, so none of them can ask for somewhere the wheel cannot go.
+   */
+  setLockDegrees(degrees) {
+    this.setLimits(-degrees, degrees);
+  }
+
+  /**
+   * Limits that need not match: a wheel calibrated with its centre a few
+   * degrees off has a little more lock one way than the other. `lock` — the
+   * larger of the two — is what the vehicle model's −1…+1 is scaled to.
+   */
+  setLimits(minDegrees, maxDegrees) {
+    const min = minDegrees * DEG, max = maxDegrees * DEG;
+    if (min === this.minAngle && max === this.maxAngle) return;
+    this.minAngle = min;
+    this.maxAngle = max;
+    this.lock = Math.max(-min, max);
+    for (const s of this.sources) if ('lock' in s) s.lock = this.lock;
+    this.target = clamp(this.target, min, max);
+    this.angle = clamp(this.angle, min, max);
   }
 
   /** −1 … +1, which is what a vehicle model wants. */

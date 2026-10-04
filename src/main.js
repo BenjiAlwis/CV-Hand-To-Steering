@@ -25,9 +25,17 @@ import { Settings } from './ui/settings.js';
 import { PanelChrome } from './ui/panelchrome.js';
 import { SettingsPanel } from './ui/settingspanel.js';
 import { HandTrackingSource } from './input/handsource.js';
-import { Shifter } from './input/shifter.js';
+import { Shifter, ShiftGate } from './input/shifter.js';
+import { WheelSource, HOLD_FOR_REVERSE } from './input/wheelsource.js';
+import { WheelPanel } from './ui/wheelpanel.js';
+import { NativeWheels } from './input/nativewheels.js';
+import { lockRange } from './input/wheels.js';
+import { RimPanel } from './ui/rimpanel.js';
+import { PedalSet } from './input/pedalset.js';
+import { PedalSetPanel } from './ui/pedalsetpanel.js';
+import { CarPanel } from './ui/carpanel.js';
 import { CameraPanel } from './ui/camerapanel.js';
-import { CarSim } from './sim/carsim.js';
+import { CarSim, NEUTRAL } from './sim/carsim.js';
 import { Hud } from './ui/hud.js';
 
 // Running inside the desktop shell rather than a browser tab.
@@ -104,9 +112,20 @@ async function main() {
 
   await step('warming the rig…');
   const controller = new SteeringController({ lockDegrees: LOCK_DEGREES });
-  const sim = new CarSim();
+  // Parked in neutral, as a car is before anyone drives it.
+  const sim = new CarSim({ gear: NEUTRAL });
   const hud = new Hud();
   const settings = new Settings();
+  // Driving aids, all off at launch unless switched on in settings.
+  const syncAssists = () => Object.assign(sim.assists, {
+    gears: settings.get('autoGears'),
+    throttle: settings.get('autoThrottle'),
+    brake: settings.get('autoBrake'),
+    queueDown: settings.get('queueDown'),
+    traction: settings.get('traction'),
+    abs: settings.get('abs'),
+  });
+  syncAssists();
 
   mountWheel(DEFAULT_TEAM);
 
@@ -153,6 +172,47 @@ async function main() {
   // hands, that beats a stale mouse drag or a held key.
   await controller.addSource(handSource);
 
+  /* ── a physical wheel ──────────────────────────────────────────────── */
+
+  // Above the camera: hands on a real rim are also fists in front of the
+  // lens, and the rim is the one that knows where it actually is. `shift`
+  // is declared further down, so the paddles reach it through a closure.
+  const toast = new Toast(document.getElementById('toast'));
+  // Inside the desktop shell on Linux, wheels come through the hardware
+  // helper, which finds them without being touched and can turn them.
+  const bridge = NativeWheels.bridge;
+  const native = bridge && await bridge.available().catch(() => false)
+    ? new NativeWheels(bridge) : null;
+  const wheelSource = new WheelSource({
+    native,
+    // A new 0° on the rim is a new 0° for the rig: centre it, and start every
+    // other input from there.
+    onCentred: () => controller.recentre(),
+    onShift: (direction) => shift(direction, 'paddle'),
+    onGear: (gear) => selectGear(gear, 'wheel'),
+    onDevice: ({ type, name, mapped }) => toast.show(type === 'connected'
+      ? `${name} connected${wheelSource.rotationKnown ? (mapped ? '' : ' — press S to map its paddles') : ' — click Calibrate on WHEEL BASE so the rig knows how far it turns'}`
+      : `${name} disconnected`),
+  });
+  wheelSource.enabled = settings.get('wheel');
+  wheelSource.force.enabled = settings.get('wheelForce');
+  wheelSource.force.strength = settings.get('wheelStrength');
+  // A hidden window stops drawing frames, so it would stop updating the
+  // spring too — let go of the rim rather than leave it held somewhere.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) wheelSource.drive(null); });
+  await controller.addSource(wheelSource);
+
+  /* ── real pedals ───────────────────────────────────────────────────── */
+
+  const pedalSet = new PedalSet({
+    native,
+    getSteer: () => wheelSource.mapping?.steer ?? null,
+    onDevice: ({ type, name, ready }) => toast.show(type === 'connected'
+      ? `Pedals: ${name} — ${ready ? 'press one to drive' : 'press Calibrate on the PEDAL SET panel'}`
+      : `Pedals: ${name} disconnected`),
+  });
+  pedalSet.enabled = settings.get('pedalSet');
+
   /* ── camera foot tracking ──────────────────────────────────────────── */
 
   const footFeed = document.getElementById('footFeed');
@@ -169,10 +229,61 @@ async function main() {
    * Gear flaps. A finger pull on either hand shifts, and the paddle on the
    * wheel is pulled to match so the gesture has something to answer it.
    */
-  const shift = (direction) => {
-    if (sim.shift(direction)) rig.wheel?.pullShiftPaddle(direction);
+  //
+  // Fingers, real paddles and the keys all come through here. The gate stops
+  // one pull arriving twice — a paddle pulled in front of the camera is also
+  // a finger the camera sees move.
+  const shiftGate = new ShiftGate();
+  /** The last gear change, for the panel: which way, from what, when. */
+  let lastShift = null;
+  const ordinal = (n) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
+  const shift = (direction, from = 'keys') => {
+    if (!shiftGate.accept(direction, from)) return;
+    if (sim.shift(direction)) {
+      rig.wheel?.pullShiftPaddle(direction);
+      // Into neutral or reverse reads as the gear, not as up or down.
+      lastShift = sim.gear <= NEUTRAL
+        ? { direction, gear: sim.gear === NEUTRAL ? 'N' : 'R', from, at: performance.now() }
+        : { direction, from, at: performance.now() };
+      return;
+    }
+    // Refused. A downshift the car is too fast for is the gearbox protecting
+    // the engine, as a real one does — say so, rather than leave a paddle
+    // pull that seems to have done nothing.
+    const refusal = sim.refusal;
+    if (refusal?.reason === 'rolling-back') {
+      toast.show('Stop rolling back before selecting first', 2500);
+      return;
+    }
+    if (refusal?.reason === 'moving') {
+      toast.show('Reverse — stop the car first, then shift down again', 3000);
+      return;
+    }
+    if (refusal?.reason !== 'too-fast') return;
+    const { dropBelow } = sim.gearLimits(refusal.gear);
+    lastShift = { direction, from, at: performance.now(), refused: refusal.queued ? 'waiting' : 'refused' };
+    toast.show(refusal.queued
+      ? `${ordinal(refusal.gear)} gear waiting — it will drop in below ${dropBelow} km/h`
+      : `Downshift refused — too fast for ${ordinal(refusal.gear)} (below ${dropBelow} km/h)`, 2500);
   };
-  const shifter = new Shifter(handSource, { onShift: shift });
+  const shifter = new Shifter(handSource, { onShift: (direction) => shift(direction, 'fingers') });
+
+  /**
+   * Neutral and reverse, from a button: the N key, the wheel's own buttons,
+   * the menu. As on the car, the paddles never select either.
+   */
+  const selectGear = (gear, from = 'keys') => {
+    const done = gear === 'reverse' ? sim.selectReverse() : sim.selectNeutral();
+    if (done) {
+      lastShift = { direction: 0, gear: gear === 'reverse' ? 'R' : 'N', from, at: performance.now() };
+    } else if (sim.refusal?.reason === 'moving') {
+      toast.show('Reverse refused — stop the car first', 2500);
+    }
+  };
+  /** Whether hand tracking is set aside for a calibration. */
+  let handsPaused = false;
+  /** Pressing the throttle in neutral does nothing but rev the engine; say why, now and then. */
+  let neutralHintAt = -Infinity;
   shifter.enabled = settings.get('flaps');
   camera.setBoxes(settings.get('boxes'));
   // The segmentation detector is a second model on the same GPU, so it loads
@@ -218,6 +329,18 @@ async function main() {
     }
   }
 
+  const wheelPanel = new WheelPanel({ wheel: wheelSource, settings });
+  const pedalSetPanel = new PedalSetPanel({ pedals: pedalSet, settings });
+  const carPanel = new CarPanel();
+  const rimPanel = new RimPanel({
+    wheel: wheelSource,
+    settings,
+    onSetup: () => {
+      settingsPanel.toggle(true);
+      document.getElementById('setWheel')?.scrollIntoView({ block: 'start' });
+    },
+  });
+
   const settingsPanel = new SettingsPanel({
     settings,
     chrome,
@@ -230,7 +353,12 @@ async function main() {
 
   // Acting on a changed setting, rather than only remembering it.
   settings.onChange((key, value) => {
-    if (key === 'flaps') shifter.enabled = value;
+    if (key === 'flaps') shifter.enabled = value && !handsPaused;
+    if (['autoGears', 'autoThrottle', 'autoBrake', 'queueDown', 'traction', 'abs'].includes(key)) syncAssists();
+    if (key === 'wheel') wheelSource.enabled = value;
+    if (key === 'wheelForce') wheelSource.force.enabled = value;
+    if (key === 'wheelStrength') wheelSource.force.strength = value;
+    if (key === 'pedalSet') pedalSet.enabled = value;
     if (key === 'boxes') { camera.setBoxes(value); syncBoxDetector(); }
     if (key === 'gloves') {
       tracker.setConfidence(value ? GLOVED : BARE)
@@ -297,7 +425,9 @@ async function main() {
   };
 
   bindKeys(app, controller, hud, cycleTeam, {
-    toggleCamera, handSource, shift,
+    toggleCamera, handSource, shift, selectGear,
+    // Recentring the rig recentres a real rim too, where the motor can.
+    recentre: () => { if (!wheelSource.centre()) controller.recentre(); },
     toggleSettings: (force) => settingsPanel.toggle(force),
   });
 
@@ -305,7 +435,39 @@ async function main() {
     app.updateCamera(dt);
     app.project(wheelOrigin, pivot);
 
+    wheelSource.poll();
+    pedalSet.poll();
+    // While a wheel or the pedals are being calibrated, the camera's hands are
+    // set aside: hands on or near the rim would otherwise steer the rig and
+    // pull the flaps in the middle of it. They come back the moment it ends.
+    const calibrating = !!(wheelSource.centring || wheelSource.awaitingBase || wheelSource.measuring
+      || wheelSource.returning || wheelSource.wizard || pedalSet.wizard);
+    if (calibrating !== handsPaused) {
+      handsPaused = calibrating;
+      handSource.enabled = !calibrating;
+      shifter.enabled = !calibrating && settings.get('flaps');
+      if (calibrating) camera.setStatus('hand tracking paused while calibrating', 'busy');
+      else camera.setStatus(tracker.running ? 'hand tracking back on' : 'camera off', tracker.running ? 'live' : 'idle');
+    }
+    // The rig turns as far as the connected wheel does, and no further.
+    // The rig turns as far as the connected wheel does each way — its
+    // calibrated ends when it has them — and never past its own limit.
+    const range = lockRange(LOCK_DEGREES, wheelSource.rotation ? wheelSource.mapping : null);
+    controller.setLimits(range.min, range.max);
+    if (settingsPanel.open) { wheelPanel.update(); pedalSetPanel.updateSettings(); }
     const angle = controller.update(dt);
+    // While the rim steers, the inputs that keep their own angle are kept on
+    // it, so taking over with a key or a drag starts from where the rim is
+    // instead of swinging the motor to wherever that input last left off.
+    if (controller.activeName === 'wheel') {
+      for (const source of controller.sources) {
+        if (source.name === 'keyboard' || source.name === 'pointer') source.sync(controller.angle);
+      }
+    }
+    // The other direction: whenever something other than the rim is steering,
+    // the rim is driven to match. `drive` lets go whenever it should not.
+    wheelSource.drive(controller.held && controller.activeName !== 'wheel' ? controller.degrees : null, dt);
+    if (chrome.isVisible('rim')) rimPanel.update(controller.degrees, lastShift);
     rig.wheel.setAngle(angle);
     // After the steering source has read, so the named hands are current.
     shifter.update();
@@ -326,8 +488,22 @@ async function main() {
     } else {
       feetLastSeen = null;
     }
+    // Real pedals outrank the foot camera once one has been pressed.
+    const realPedals = pedalSet.pedals();
+    const aids = sim.assists.throttle || sim.assists.brake;
+    const pedalDriver = realPedals ? 'pedals' : pedalInput ? 'feet' : aids ? 'aids' : 'none';
+    pedalInput = realPedals ?? pedalInput;
+    if (chrome.isVisible('pedalset')) pedalSetPanel.update(pedalDriver);
     const telemetry = sim.update(dt, controller.normalised, pedalInput);
+    if (sim.gear === NEUTRAL && sim.speed < 1 && (pedalInput?.throttle ?? 0) > 0.3
+        && performance.now() - neutralHintAt > 8000) {
+      neutralHintAt = performance.now();
+      toast.show('In neutral — shift up (E or the right paddle) for first', 3500);
+    }
+    // A remembered downshift landing, now that the speed allows it.
+    if (sim.queuedShift) lastShift = { direction: -1, from: 'waited', at: performance.now() };
     rig.wheel.update(dt, telemetry);
+    if (chrome.isVisible('car')) carPanel.update(telemetry);
     environment.update(dt, elapsed);
     // A preview nobody can see does not need the frame blitted into it, but
     // the trackers behind them keep running either way.
@@ -347,6 +523,7 @@ async function main() {
       controller,
       renderer: app.renderer,
       cameraName: app.freeCamera ? 'free' : app.view.name,
+      lockKnown: !(wheelSource.connected && wheelSource.enabled) || wheelSource.rotationKnown,
     });
   });
 
@@ -373,7 +550,7 @@ async function main() {
 
   // Handy from the console while iterating.
   Object.assign(window, {
-    app, rig, controller, sim, environment, tracker, handSource, shifter,
+    app, rig, controller, sim, environment, tracker, handSource, shifter, wheelSource, native, pedalSet,
     footTracker, pedals, assignCamera, refreshCameras,
     settings, chrome, settingsPanel, camera,
   });
@@ -387,25 +564,56 @@ async function main() {
       if (VIEWS[name]) app.setView(VIEWS[name]);
     },
     freeCamera: () => app.toggleFreeCamera(),
-    recentre: () => controller.recentre(),
+    recentre: () => { if (!wheelSource.centre()) controller.recentre(); },
+    calibrateCentre: () => wheelSource.calibrateCentre(),
     toggleHud: () => hud.toggle(),
     setTeam: (id) => mountWheel(id),
     camera: (on) => toggleCamera(on),
     cameraOn: () => tracker.running,
     recalibrate: () => handSource.recalibrate(),
-    shift: (d) => shift(d),
+    shift: (d) => shift(d, 'menu'),
+    neutral: () => selectGear('neutral', 'menu'),
+    reverse: () => selectGear('reverse', 'menu'),
     ratio: (v) => handSource.setRatio(v),
     teams: () => TEAM_IDS.map((id) => ({ id, name: buildSpec(id).name })),
     currentTeam: () => rig.teamId,
   };
 }
 
+/** A line of text that appears at the top of the screen for a few seconds. */
+class Toast {
+  constructor(el) { this.el = el; this._timer = 0; }
+  show(text, ms = 4500) {
+    if (!this.el) return;
+    // A wheel and its pedals usually arrive together; show both, not just the last.
+    const recent = performance.now() - (this._at ?? -Infinity) < 1000;
+    this._at = performance.now();
+    this.el.textContent = recent && this.el.classList.contains('show') ? `${this.el.textContent} · ${text}` : text;
+    this.el.classList.add('show');
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => this.el.classList.remove('show'), ms);
+  }
+}
+
 function bindKeys(app, controller, hud, cycleTeam, vision) {
+  // N is the car's N button: a tap selects neutral, a hold selects reverse.
+  let nTimer = null;
+  window.addEventListener('keydown', (event) => {
+    if (event.code !== 'KeyN' || event.repeat || event.metaKey || event.ctrlKey) return;
+    nTimer = setTimeout(() => { nTimer = null; vision.selectGear('reverse'); }, HOLD_FOR_REVERSE);
+  });
+  window.addEventListener('keyup', (event) => {
+    if (event.code !== 'KeyN' || nTimer === null) return;
+    clearTimeout(nTimer);
+    nTimer = null;
+    vision.selectGear('neutral');
+  });
+
   window.addEventListener('keydown', (event) => {
     if (event.metaKey || event.ctrlKey) return;
     switch (event.code) {
       case 'KeyC': app.toggleFreeCamera(); break;
-      case 'KeyR': controller.recentre(); break;
+      case 'KeyR': vision.recentre(); break;
       case 'KeyH': hud.toggle(); break;
       case 'KeyS': vision.toggleSettings(); break;
       case 'Escape': vision.toggleSettings(false); break;

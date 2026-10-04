@@ -56,3 +56,37 @@ export class Shifter {
     }
   }
 }
+
+/**
+ * One gear change per intent, whichever input it came from.
+ *
+ * With a real wheel in front of the camera there are two ways to shift at
+ * once: the paddle on the rim, and the finger the camera watches reaching
+ * for it. Pulling a paddle moves the index finger, so a single pull can
+ * arrive as a paddle shift and a finger shift a few frames apart — two gears
+ * for one pull. A shift in the same direction from a different input inside
+ * `windowMs` is taken as the same pull and dropped.
+ *
+ * Repeats from the same input always pass: two quick pulls of one paddle are
+ * two shifts, and the finger detector already has its own refractory period.
+ */
+export class ShiftGate {
+  constructor({ windowMs = 300 } = {}) {
+    this.windowMs = windowMs;
+    this.last = null;
+  }
+
+  /**
+   * @param {-1|1} direction
+   * @param {string} from  'paddle', 'fingers', 'keys', 'menu'…
+   * @returns {boolean} whether this is a new shift
+   */
+  accept(direction, from, nowMs = performance.now()) {
+    const last = this.last;
+    if (last && last.direction === direction && last.from !== from && nowMs - last.at < this.windowMs) {
+      return false;
+    }
+    this.last = { direction, from, at: nowMs };
+    return true;
+  }
+}
