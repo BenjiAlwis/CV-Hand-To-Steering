@@ -30,7 +30,7 @@ import { SteeringSource } from './source.js';
 import {
   chooseDevice, defaultMapping, displayName, isLikelyWheel, loadWheels, saveWheels,
   steerDegrees, steerToAxis, buttonPressed, MappingWizard, LeadTracker, WIZARD_STEPS,
-  SweepCalibration, RotationMeasurement, MotionProfile, ASSUMED_ROTATION, buttonValue,
+  SweepCalibration, RotationMeasurement, MotionProfile, ASSUMED_ROTATION, buttonValue, buttonPresses,
 } from './wheels.js';
 import { OneEuroFilter } from '../vision/handmath.js';
 
@@ -159,6 +159,8 @@ export class WheelSource extends SteeringSource {
     this._rimSeen = 0;
     this._rimButtons = null;
     this._swallow = false;
+    /** The paddles' press counts as last seen, where the device keeps them. */
+    this._presses = { up: null, down: null };
     this._runaway = { last: null, at: 0, count: 0, until: 0 };
     this.lead = new LeadTracker();
     /** A person is turning the rim right now. */
@@ -290,8 +292,25 @@ export class WheelSource extends SteeringSource {
     // pulling one is the answer to a question rather than a gear change.
     for (const [key, direction] of [['up', 1], ['down', -1]]) {
       const down = buttonPressed(this.mapping[key], pads);
+      // Every pull counts, however short. Where the helper keeps a count of
+      // presses, that decides how many shifts this frame owes — a click
+      // that went down and up since the last frame still counts, and two
+      // quick pulls are two shifts. Without one (the browser), a press is
+      // seen only if it is still down when the frame looks.
+      const binding = this.mapping[key];
+      const count = buttonPresses(binding, pads);
+      // A count is only compared with one from the same button: remapping a
+      // paddle must not read the difference between two buttons as pulls.
+      const which = binding ? `${binding.pad}#${binding.index}` : null;
+      const seen = this._presses[key];
+      let pulls;
+      if (count !== null && seen?.which === which && seen.count !== null) pulls = Math.max(0, Math.min(3, count - seen.count));
+      else pulls = down && !this._held[key] ? 1 : 0;
+      this._presses[key] = { which, count };
       // Not while a press is being taken as proof that a wheel is fitted.
-      if (down && !this._held[key] && this.enabled && !mapping && !this.rimCheck && !this._swallow) this.onShift(direction);
+      if (this.enabled && !mapping && !this.rimCheck && !this._swallow) {
+        for (let i = 0; i < pulls; i++) this.onShift(direction);
+      }
       this._held[key] = down;
     }
 
@@ -828,6 +847,7 @@ export class WheelSource extends SteeringSource {
     this._smooth.reset();
     this._sweepAfterMeasure = false;
     this._held = { up: false, down: false, neutral: false, reverse: false };
+    this._presses = { up: null, down: null };
     this.degrees = 0;
     this.drive(null);
     this.lead.reset();

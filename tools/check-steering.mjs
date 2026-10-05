@@ -303,12 +303,35 @@ console.log('gear flaps');
   ok('a left-hand pull is a downshift', shifts.length === 2 && shifts[1] === -1,
     JSON.stringify(shifts));
 
-  // Letting go of the wheel disarms them.
+  // Opening a hand to let go straightens the index too — never a pull.
+  const opening = shifts.length;
   for (let i = 0; i < 6; i++) step({ curl: 0, pullRight: 0 });
+  ok('opening the hand to let go is not taken for a pull', shifts.length === opening, JSON.stringify(shifts));
+  // A moment later the flaps are disarmed altogether.
+  for (let i = 0; i < 30; i++) step({ curl: 0, pullRight: 0 });
   ok('letting go disarms the flaps', shifter.state.armed === false);
   const before = shifts.length;
   for (let i = 0; i < 6; i++) step({ curl: 0, pullRight: 0, pullLeft: 0 });
   ok('and no further shifts get through', shifts.length === before);
+}
+
+console.log('\na flap pulled on a loose grip');
+{
+  // A loose hold — fingers only lightly round the rim — and then the index
+  // straightens to pull a flap. That alone takes the grip reading under the
+  // release threshold, so the wheel reads as let go on the very frame of the
+  // pull. The pull must still count.
+  const r = rig();
+  const shifts = [];
+  const shifter = new Shifter(r.source, { onShift: (d) => shifts.push(d) });
+  const step = (opts) => { r.frame(0.1, opts); shifter.update(r.now()); };
+  for (let i = 0; i < 6; i++) step({ curl: 0.8, pullRight: 0.8, pullLeft: 0.8 });
+  for (let i = 0; i < 6; i++) step({ curl: 0.42, pullRight: 0.42, pullLeft: 0.42 });
+  ok('a loose hold is still a hold', r.source.state.holding === true);
+  let dropped = false;
+  for (let i = 0; i < 4; i++) { step({ curl: 0.42, pullRight: 0, pullLeft: 0.42 }); dropped ||= !r.source.state.holding; }
+  ok('the pull loosens the grip reading past letting go', dropped);
+  ok('and still shifts up', shifts.length === 1 && shifts[0] === 1, JSON.stringify(shifts));
 }
 
 console.log(failures ? `\n${failures} failure(s)` : '\nall steering checks passed');

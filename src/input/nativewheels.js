@@ -30,6 +30,10 @@ export class NativeWheels {
     this.moza = { state: 'absent', holder: null, values: {} };
     /** The last answer to "is a wheel fitted to the base?", and when it came. */
     this.rim = null;
+    /** The rim's shift LEDs: null until asked, then the helper's answer. */
+    this.leds = null;
+    this._ledMask = -1;
+    this._ledAt = 0;
     /** Force feedback: which device is being driven, or why it cannot be. */
     this.ff = { state: 'released', id: null, message: null };
     this.ready = false;
@@ -69,6 +73,35 @@ export class NativeWheels {
   mozaRead(names) { this.bridge.send({ op: 'moza-read', names }); }
   /** Asks a Moza base, read-only, whether a wheel is fitted to it. */
   probeRim() { this.bridge.send({ op: 'rim-probe' }); }
+
+  /** Finds the rim's shift LEDs (read-only) so the rig can drive them. */
+  ledsStart() {
+    this.leds = { state: 'finding' };
+    this._ledMask = -1;
+    this.bridge.send({ op: 'leds-start' });
+  }
+
+  /**
+   * Lights the rim's LEDs, bit i for LED i from the left. Sent when the
+   * pattern changes — never faster than 60 a second — and repeated every
+   * half second, so a reply lost alongside another program is put right.
+   */
+  sendLeds(mask, now = performance.now()) {
+    if (this.leds?.state !== 'ok') return;
+    const changed = mask !== this._ledMask;
+    if ((changed && now - this._ledAt >= 1000 / 60) || now - this._ledAt >= 500) {
+      this.bridge.send({ op: 'leds', mask });
+      this._ledMask = mask;
+      this._ledAt = now;
+    }
+  }
+
+  /** Puts the rim's LEDs out and stops driving them. */
+  ledsStop() {
+    if (!this.leds) return;
+    this.bridge.send({ op: 'leds-stop' });
+    this.leds = null;
+  }
   mozaWrite(name, value) { this.bridge.send({ op: 'moza-write', name, value }); }
 
   _receive(message) {
@@ -98,10 +131,16 @@ export class NativeWheels {
         const buttons = new Array(d.buttons.length).fill(0);
         for (const i of message.down) buttons[i] = 1;
         d.buttons = buttons;
+        // Presses counted by the helper, so none is lost between frames.
+        if (message.presses) d.presses = message.presses;
         break;
       }
       case 'moza':
         this.moza = { state: message.state, holder: message.holder, values: { ...message.values } };
+        this.onChange();
+        break;
+      case 'leds':
+        if (message.state !== 'off') this.leds = { ...message };
         this.onChange();
         break;
       case 'rim':

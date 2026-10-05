@@ -78,6 +78,8 @@ export function buildMaterials(shared, spec) {
   if (livery.paint) {
     faceplate.normalScale.set(0.06, 0.06);
     faceplate.anisotropy = 0.1;
+    // A metal plate (a sim wheel's anodised aluminium) rather than paint.
+    if (livery.paint.metal) { faceplate.metalness = 0.55; faceplate.envMapIntensity = 1.0; }
   }
   // Where the face is painted, the lacquer drops away (clearcoat × map).
   if (faceplateMaps.clearcoatMap) faceplate.clearcoatMap = faceplateMaps.clearcoatMap;
@@ -223,6 +225,27 @@ export function buildMaterials(shared, spec) {
     color: 0x16181c, roughness: 0.35, metalness: 0.5, clearcoat: 0.3, envMapIntensity: 1.1,
   });
 
+  /** Bright machined bezels round a sim wheel's buttons. */
+  const bezelSilver = new THREE.MeshPhysicalMaterial({
+    color: 0xb4b9c1, roughness: 0.28, metalness: 0.92, envMapIntensity: 1.3, side: THREE.DoubleSide,
+  });
+  /** Black leather — a sim wheel's rim: dark, softly satin, little sheen. */
+  const leather = new THREE.MeshPhysicalMaterial({
+    map: colorTexture(rubber.color, 2),
+    normalMap: dataTexture(rubberNormal, 2),
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    color: 0x8a8c90, roughness: 0.58, metalness: 0.0,
+    sheen: 0.15, sheenRoughness: 0.6, sheenColor: new THREE.Color(0x26282c),
+    clearcoat: 0.12, clearcoatRoughness: 0.45, envMapIntensity: 0.75,
+  });
+  leather.map.repeat.set(6, 2);
+  leather.normalMap.repeat.set(6, 2);
+
+  /** Dark anodised aluminium — a sim wheel's paddles. */
+  const aluDark = new THREE.MeshPhysicalMaterial({
+    color: 0x3a3e45, roughness: 0.38, metalness: 0.85, envMapIntensity: 1.2,
+  });
+
   /** Printed white marks standing on a part (a roller's pointer). */
   const inkWhite = new THREE.MeshPhysicalMaterial({ color: 0xe8ebef, roughness: 0.45 });
 
@@ -323,6 +346,7 @@ export function buildMaterials(shared, spec) {
   const all = [
     faceplate, carbonBack, carbonPlain, carbonEdge, grip, silicone, thumbPad, moduleGlass,
     greySilicone, sleeve, podSatin, housingSatin, bezelBlack, knurlBlack, knobBlack, inkWhite,
+    bezelSilver, aluDark, leather,
     dialFace, dialFlank, titanium, anodisedBlack, lens, screenGlass,
     ...Object.values(caps),
   ];
@@ -331,6 +355,7 @@ export function buildMaterials(shared, spec) {
     faceplate, carbonPlain, carbonBack, carbonEdge,
     grip, silicone, thumbPad,
     greySilicone, sleeve, podSatin, housingSatin, bezelBlack, knurlBlack, knobBlack, inkWhite,
+    bezelSilver, aluDark, leather,
     dialFace, dialFlank, titanium, anodisedBlack,
     caps, lens, screenGlass, moduleGlass,
     faceplateMaps,

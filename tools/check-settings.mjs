@@ -129,6 +129,21 @@ console.log('\nthe gearbox');
   store = {};
 }
 
+console.log('\nthe dash');
+{
+  store = {};
+  const { dashShown } = await import('../src/ui/dash.js');
+  const s = new Settings();
+  ok('starts on auto, at the bottom', s.get('dash') === 'auto' && s.get('dashPosition') === 'bottom');
+  ok('on auto it shows for a wheel with no screen', dashShown('auto', { screen: null }) === true);
+  ok('and stays away for one with a screen', dashShown('auto', { screen: { width: 0.09 } }) === false);
+  ok('always shown overrides a wheel with a screen', dashShown('on', { screen: { width: 0.09 } }) === true);
+  ok('never shown overrides a wheel without one', dashShown('off', { screen: null }) === false);
+  s.set('dash', 'off');
+  ok('a choice is remembered', new Settings().get('dash') === 'off');
+  store = {};
+}
+
 console.log('\nthe wheel-fitted check');
 {
   store = {};

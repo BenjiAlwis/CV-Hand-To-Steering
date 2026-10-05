@@ -177,6 +177,7 @@ function buildMenu() {
         { label: 'Mercedes', accelerator: 'CmdOrCtrl+Shift+2', click: run('wheelhouse.setTeam("mercedes")') },
         { label: 'Red Bull', accelerator: 'CmdOrCtrl+Shift+3', click: run('wheelhouse.setTeam("redbull")') },
         { label: 'Basic wheel 1', accelerator: 'CmdOrCtrl+Shift+4', click: run('wheelhouse.setTeam("basic1")') },
+        { label: 'Moza ES (R3)', accelerator: 'CmdOrCtrl+Shift+5', click: run('wheelhouse.setTeam("mozaES")') },
         { type: 'separator' },
         { label: 'Next Wheel', accelerator: 'CmdOrCtrl+T', click: run('wheelhouse.setTeam(wheelhouse.teams()[(wheelhouse.teams().findIndex(t=>t.id===wheelhouse.currentTeam())+1)%wheelhouse.teams().length].id)') },
       ],

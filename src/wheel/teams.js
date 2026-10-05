@@ -767,6 +767,161 @@ const basic1 = {
   },
 };
 
+/* ───────────────────────────── Moza ES ──────────────────────────── */
+
+const mozaES = {
+  id: 'mozaES',
+  name: 'Moza ES',
+  tagline: 'R3 bundle · 22 buttons, 10 LEDs',
+
+  // Measured from the dimensioned CAD front view in Moza's own ES/ESX
+  // manual, scaled to its published 280 mm, with the button numbers from
+  // Moza's button-numbering guide. The R3 bundles ship the ES family — ESX
+  // (Xbox legends) or ES Lite (TPE grips) — on this one chassis; this is
+  // the ES, with PC legends. Origin at the hub.
+  //
+  // A round wheel rather than an F1 shell: an aluminium rim, D-shaped with a
+  // flat bottom, wrapped in leather, with a dark brushed-aluminium plate
+  // standing in front of leather spokes. The shell here is that plate.
+  shell: {
+    stations: [
+      [0, -0.0743], [0.0178, -0.0743], [0.0157, -0.0722], [0.0160, -0.0688], [0.0253, -0.0549],
+      [0.0319, -0.0585], [0.0376, -0.0605], [0.0472, -0.0585], [0.0518, -0.0541], [0.0541, -0.0431],
+      [0.0521, -0.0377], [0.0596, -0.0339], [0.0650, -0.0370], [0.0715, -0.0362], [0.0759, -0.0307],
+      [0.0756, -0.0239], [0.0794, -0.0203], [0.0840, -0.0100], [0.0830, 0.0000], [0.0804, 0.0164],
+      [0.0766, 0.0186], [0.0770, 0.0227], [0.0729, 0.0359], [0.0571, 0.0435], [0.0525, 0.0438],
+      [0.0400, 0.0405], [0.0331, 0.0376], [0.0260, 0.0432], [0.0085, 0.0452], [0, 0.0452],
+    ],
+    thickness: 0.0070, bevel: 0.0012,
+    // The six screws are dimples in the plate, not bolts standing on it.
+    bolts: [],
+    dimples: [[0.0138, 0.0238, 0.0047], [0.0276, 0, 0.0047], [0.0138, -0.0241, 0.0047]],
+  },
+
+  livery: {
+    weaveTint: '#2a2d32',
+    // Brushed, anodised aluminium all over; the upper wings a lighter shade.
+    paint: {
+      colour: '#1f2125', roughness: 0.45, metal: true, brushed: true, bare: [],
+      patches: [{ colour: '#34373d', points: [[0.0331, 0.0376], [0.0400, 0.0405], [0.0525, 0.0438], [0.0571, 0.0435],
+        [0.0729, 0.0359], [0.0770, 0.0227], [0.0766, 0.0186], [0.0500, 0.0170], [0.0331, 0.0200]] }],
+    },
+    buttonBezel: 'silver',
+    accent: '#e8ecf2',
+    accentSoft: 'rgba(232,236,242,0.25)',
+    inlay: false,
+    ink: 'rgba(214,222,234,0.55)',
+    stripe: null,
+    hudAccent: '#d9dee6',
+  },
+
+  // Plugged into an R3 base, its buttons reach the computer as the base's
+  // own: with this model on screen, pressing one presses its twin here.
+  hardware: { vendor: '346e' },
+
+  // Long dark-aluminium blades behind the plate, pivoting at x ±88 mm.
+  // No clutch paddles.
+  paddles: {
+    innerX: 0.0740, outerX: 0.1000, shiftY: 0.0015, shiftHeight: 0.1070, bend: 0.0040, z: -0.0220,
+    clutch: 'none', material: 'alu', hid: { up: 14, down: 13 },
+  },
+
+  // Ten RGB LEDs in a window across the top of the plate, green to red.
+  lightBar: {
+    y: 0.0387, width: 0.0490, height: 0.0047, radius: 0.0016, count: 10, ledSize: 0.0034, z: 0.0028,
+    colours: ['green', 'green', 'green', 'green', 'yellow', 'yellow', 'yellow', 'red', 'red', 'red'],
+  },
+  screen: null,
+
+  grip: {
+    // The rim: 279 × 265 mm outside, 26 mm across its face, flat-bottomed.
+    rim: {
+      path: [
+        [0.0, 0.1267], [0.0132, 0.126], [0.0263, 0.1239], [0.0392, 0.1205], [0.0515, 0.1157], [0.0633, 0.1097],
+        [0.0745, 0.1025], [0.0848, 0.0942], [0.0942, 0.0848], [0.1025, 0.0745], [0.1097, 0.0634], [0.1157, 0.0515],
+        [0.1205, 0.0392], [0.1239, 0.0263], [0.126, 0.0132], [0.1267, 0.0], [0.126, -0.0132], [0.1239, -0.0263],
+        [0.1205, -0.0392], [0.1157, -0.0515], [0.1097, -0.0633], [0.1025, -0.0745], [0.0942, -0.0848], [0.0848, -0.0942],
+        [0.0745, -0.1025], [0.0633, -0.1097], [0.0515, -0.1121], [0.0392, -0.1121], [0.0263, -0.1121], [0.0132, -0.1121],
+        [0.0, -0.1121], [-0.0132, -0.1121], [-0.0263, -0.1121], [-0.0392, -0.1121], [-0.0515, -0.1121], [-0.0634, -0.1097],
+        [-0.0745, -0.1025], [-0.0848, -0.0942], [-0.0942, -0.0848], [-0.1025, -0.0745], [-0.1097, -0.0634], [-0.1157, -0.0515],
+        [-0.1205, -0.0392], [-0.1239, -0.0263], [-0.126, -0.0132], [-0.1267, -0.0], [-0.126, 0.0132], [-0.1239, 0.0263],
+        [-0.1205, 0.0392], [-0.1157, 0.0515], [-0.1097, 0.0634], [-0.1025, 0.0745], [-0.0942, 0.0848], [-0.0848, 0.0942],
+        [-0.0745, 0.1025], [-0.0634, 0.1097], [-0.0515, 0.1157], [-0.0392, 0.1205], [-0.0263, 0.1239], [-0.0132, 0.126],
+      ],
+      width: 0.0260, depth: 0.0300, squareness: 2.4, z: -0.0060, outerWidth: 0.2794,
+      material: 'leather',
+      // The 14 mm silver marker at twelve o'clock.
+      bands: [{ from: 357.1, to: 2.9, colour: '#c3c6cc', roughness: 0.45 }],
+    },
+    centreX: 0.1267, halfWidth: 0.0130, topY: 0.1397, bottomY: -0.1251,
+    thumbPad: null, fingerGrooves: 0, detached: true, joined: true, bridges: [],
+    thumbRotaries: [], thumbButtons: [],
+  },
+
+  pods: [
+    // The leather spokes, running behind the plate out to the rim.
+    // Narrow bands from the plate's sides out to the rim (y −20 to +22 mm),
+    // with the openings above and below them, where the paddles show.
+    { points: [[0.0740, 0.0200], [0.0997, 0.0212], [0.1038, 0.0247], [0.1160, 0.0300], [0.1200, 0.0000],
+      [0.1160, -0.0320], [0.1052, -0.0264], [0.0992, -0.0195], [0.0740, -0.0200]],
+      radius: 0.0060, depth: 0.0160, z: -0.0160, material: 'rim' },
+    // The matte chin from the plate down into the bottom of the rim.
+    { points: [[0, -0.0700], [0.0178, -0.0743], [0.0310, -0.0980], [0.0360, -0.1160], [0, -0.1160]],
+      radius: 0.0030, depth: 0.0160, z: -0.0140, material: 'matte' },
+    // The raised black shield carrying the logo.
+    { points: [[0, 0.0170], [0.0120, 0.0170], [0.0185, 0.0123], [0.0196, 0.0020], [0.0090, -0.0156],
+      [0.0067, -0.0168], [0, -0.0168]], radius: 0.0020, depth: 0.0030, material: 'matte' },
+    // The black hump the LED window sits in.
+    { points: [[0, 0.0452], [0.0240, 0.0452], [0.0300, 0.0400], [0.0260, 0.0340], [0, 0.0340]],
+      radius: 0.0020, depth: 0.0025, material: 'matte' },
+  ],
+
+  dpads: [{
+    x: -0.0587, y: 0.0012, size: 0.0289, arm: 0.0100, height: 0.0045,
+    ids: { up: 'dpadUp', right: 'dpadRight', down: 'dpadDown', left: 'dpadLeft' },
+    hid: { up: 5, right: 6, down: 7, left: 8 },
+  }],
+
+  // Black caps, white legends; HID numbers as the base reports them (1-based).
+  buttons: [
+    { id: 'neutral', x: -0.0671, y: 0.0267, label: 'N', hid: 19, radius: 0.00475, bezelScale: 1.23 },
+    { id: 'wip', x: -0.0529, y: 0.0335, label: 'WIP', hid: 20, radius: 0.00475, bezelScale: 1.23 },
+    { id: 'box', x: 0.0529, y: 0.0335, label: 'BOX', hid: 33, radius: 0.00475, bezelScale: 1.23 },
+    { id: 'limiter', x: 0.0671, y: 0.0267, label: 'P', hid: 32, radius: 0.00475, bezelScale: 1.23 },
+    { id: 'flash', x: -0.0320, y: 0.0221, label: 'FL', hid: 21, radius: 0.0047, bezel: false },
+    { id: 'pitLimiter', x: 0.0320, y: 0.0221, label: 'PL', hid: 34, radius: 0.0047, bezel: false },
+    { id: 'y', x: 0.0587, y: 0.0115, label: 'Y', hid: 3, radius: 0.0045, bezel: false },
+    { id: 'x', x: 0.0482, y: 0.0012, label: 'X', legend: 'X', hid: 4, radius: 0.0045, bezel: false },
+    { id: 'b', x: 0.0692, y: 0.0012, label: 'B', hid: 2, radius: 0.0045, bezel: false },
+    { id: 'a', x: 0.0587, y: -0.0092, label: 'A', hid: 1, radius: 0.0045, bezel: false },
+    { id: 'cam', x: -0.0675, y: -0.0289, label: 'CAM', hid: 22, radius: 0.0045, bezelScale: 1.33 },
+    { id: 'reset', x: 0.0675, y: -0.0289, label: 'R', hid: 35, radius: 0.0045, bezelScale: 1.33 },
+    { id: 'radio', x: -0.0395, y: -0.0460, label: 'RADIO', legend: 'RADIO', hid: 23, radius: 0.0085, height: 0.0070, bezel: 'black', bezelScale: 1.7 },
+    { id: 'start', x: 0.0395, y: -0.0460, label: 'START', hid: 36, radius: 0.0085, height: 0.0070, bezel: 'black', bezelScale: 1.7 },
+    { id: 's1', x: -0.0080, y: -0.0402, label: 'S1', hid: 24, radius: 0.0045, size: [0.0105, 0.0065], bezel: false },
+    { id: 's2', x: 0.0080, y: -0.0402, label: 'S2', hid: 37, radius: 0.0045, size: [0.0105, 0.0065], bezel: false },
+    { id: 'home', x: 0, y: -0.0524, label: 'HOME', hid: 25, radius: 0.0050, size: [0.0135, 0.0065], bezel: false },
+    { id: 'menu', x: 0, y: -0.0643, label: 'MENU', hid: 38, radius: 0.0050, size: [0.0135, 0.0065], bezel: false },
+  ].map((b) => ({ colour: '#1b1d21', ink: '#eef1f5', labelSide: 'cap', height: 0.0045, ...b })),
+
+  rotaries: [],
+  rollers: [],
+
+  // The logo, printed white on the shield.
+  tabs: [
+    { text: 'MOZA', x: 0, y: 0.0036, w: 0.0270, h: 0.0052, plain: true, z: 0.0032, fill: true },
+    { text: 'R A C I N G', x: 0, y: -0.0010, w: 0.0160, h: 0.0018, plain: true, z: 0.0032 },
+  ],
+
+  artwork: {
+    wordmark: null,
+    buildPlate: null,
+    // The bright machined chamfer along each lower wing.
+    strokes: [{ colour: '#c8ccd2', width: 0.0015, points: [[0.0174, -0.0614], [0.0208, -0.0468], [0.0256, -0.0357],
+      [0.0367, -0.0274], [0.0455, -0.0243], [0.0767, -0.0157]] }],
+  },
+};
+
 /* ───────────────────────────── exports ───────────────────────────── */
 
 /** Give every control its shared geometry defaults. */
@@ -792,6 +947,7 @@ export const TEAMS = {
   mercedes: hydrate(mercedes),
   redbull: hydrate(redbull),
   basic1: hydrate(basic1),
+  mozaES: hydrate(mozaES),
 };
 
 export const TEAM_IDS = Object.keys(TEAMS);

@@ -33,6 +33,7 @@ export class WheelPanel {
       map: $('wheelMap'), skip: $('wheelSkip'), cancel: $('wheelCancel'),
       centre: $('wheelCentre'), reset: $('wheelReset'),
       force: $('setWheelForce'), strength: $('wheelStrength'), strengthValue: $('wheelStrengthValue'),
+      leds: $('setWheelLeds'), ledNote: $('wheelLedNote'),
       base: $('wheelBase'), baseNote: $('wheelBaseNote'),
       baseRotation: $('baseRotation'), baseFfb: $('baseFfb'), baseTemp: $('baseTemp'),
       matchF1: $('baseMatchF1'),
@@ -57,6 +58,8 @@ export class WheelPanel {
     this.el.centre.addEventListener('click', () => wheel.calibrateCentre());
     this.el.reset.addEventListener('click', () => wheel.resetMapping());
 
+    this.el.leds.checked = settings.get('wheelLeds');
+    this.el.leds.addEventListener('change', () => settings.set('wheelLeds', this.el.leds.checked));
     this.el.force.checked = settings.get('wheelForce');
     this.el.force.addEventListener('change', () => settings.set('wheelForce', this.el.force.checked));
     this.el.strength.value = String(settings.get('wheelStrength'));
@@ -67,6 +70,7 @@ export class WheelPanel {
     settings.onChange((key, value) => {
       if (key === 'wheel') this.el.enabled.checked = value;
       if (key === 'wheelForce') this.el.force.checked = value;
+      if (key === 'wheelLeds') this.el.leds.checked = value;
     });
 
     this._deviceKey = '';
@@ -106,6 +110,17 @@ export class WheelPanel {
     el.rotationNote.classList.toggle('assumed', !w.rotationKnown);
 
     el.force.disabled = el.strength.disabled = !w.drivable;
+    // What the rim's own lights are doing.
+    const leds = w.native?.leds;
+    const ledText = !this.settings.get('wheelLeds') ? ''
+      : !w.isMoza ? 'Only Moza rims can have their lights driven from here so far.'
+        : !leds || leds.state === 'finding' ? 'Looking for the wheel\'s lights…'
+          : leds.state === 'ok' ? 'Lighting the wheel\'s own LEDs from the revs.'
+            : leds.state === 'mode' ? `The wheel's lights are set not to take revs from a computer: ${leds.reason}.`
+              : leds.state === 'none' ? 'This wheel has no lights the rig can find.'
+                : 'The base is not answering on its serial port.';
+    el.ledNote.hidden = !ledText;
+    if (el.ledNote.textContent !== ledText) el.ledNote.textContent = ledText;
     setText(el.strengthValue, `${Math.round(this.settings.get('wheelStrength') * 100)}%`);
 
     const moza = w.native?.moza;

@@ -230,16 +230,37 @@ function normalise(v) {
  */
 export class FlickDetector {
   /**
+   * A finger pull, recognised either way it shows:
+   *
+   *  · absolutely — the fingertip out past `extend` hand-sizes from the
+   *    wrist, a straightened finger whoever's hand it is; or
+   *  · relatively — `rise` hand-sizes above where this finger rests when
+   *    curled. A finger pointed partly at the camera is foreshortened, and a
+   *    glove or a loose grip rests further out, so a clear flick can fall
+   *    short of the absolute mark; measured from its own rest it does not.
+   *    Given the other fingers' extension too, the rise is measured against
+   *    them: a pull moves one finger, while relaxing or tightening the whole
+   *    hand moves them all together and cancels out.
+   *
+   * It re-arms once the finger is back below `retract`, or back near its
+   * rest. The rest is learned only while the finger is curled and settled,
+   * follows it down at once and up only slowly, so a pull never becomes the
+   * new rest.
+   *
    * @param {object} o
    * @param {number} o.extend   extension, in hand-sizes, that counts as a pull
    * @param {number} o.retract  and the value it must fall back below first
+   * @param {number} o.rise     or this much above the finger's own rest
    */
-  constructor({ extend = 1.72, retract = 1.46, refractoryMs = 220 } = {}) {
+  constructor({ extend = 1.72, retract = 1.46, rise = 0.32, refractoryMs = 220 } = {}) {
     this.extend = extend;
     this.retract = retract;
+    this.rise = rise;
     this.refractoryMs = refractoryMs;
     this.armed = true;
     this.lastFire = -Infinity;
+    /** Where this finger sits when curled, or null until it has been seen. */
+    this.rest = null;
   }
 
   /**
@@ -247,12 +268,17 @@ export class FlickDetector {
    * @param {number} nowMs
    * @returns {boolean} true only on the frame the pull is recognised
    */
-  update(extension, nowMs) {
-    if (extension < this.retract) {
+  update(extension, nowMs, others = null) {
+    const signal = others === null ? extension : extension - others;
+    if (this.rest === null) this.rest = signal;
+    const above = signal - this.rest;
+    if (extension < this.retract || above < this.rise * 0.4) {
       this.armed = true;
+      // Learn the rest while curled: down at once, up gently.
+      this.rest += (signal - this.rest) * (signal < this.rest ? 0.5 : 0.06);
       return false;
     }
-    if (extension > this.extend && this.armed) {
+    if (this.armed && (extension > this.extend || above > this.rise)) {
       if (nowMs - this.lastFire < this.refractoryMs) return false;
       this.armed = false;
       this.lastFire = nowMs;
@@ -261,9 +287,18 @@ export class FlickDetector {
     return false;
   }
 
+  /** How far toward a pull the finger is, 0…1, for the overlay. */
+  progress(extension, others = null) {
+    const absolute = (extension - 1.15) / (this.extend - 1.15);
+    const signal = others === null ? extension : extension - others;
+    const relative = this.rest === null ? 0 : (signal - this.rest) / this.rise;
+    return Math.max(0, Math.min(1, Math.max(absolute, relative)));
+  }
+
   reset() {
     this.armed = true;
     this.lastFire = -Infinity;
+    this.rest = null;
   }
 }
 

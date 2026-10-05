@@ -12,7 +12,7 @@ import { App, VIEWS } from './core/app.js';
 import { Environment } from './scene/environment.js';
 import { buildSharedTextures, buildMaterials } from './wheel/materials.js';
 import { SteeringWheel } from './wheel/steeringwheel.js';
-import { buildSpec, TEAM_IDS, DEFAULT_TEAM, LOCK_DEGREES } from './wheel/spec.js';
+import { buildSpec, TEAM_IDS, TEAMS, DEFAULT_TEAM, LOCK_DEGREES } from './wheel/spec.js';
 import { SteeringController } from './input/controller.js';
 import { PointerSource } from './input/pointer.js';
 import { KeyboardSource } from './input/keyboard.js';
@@ -25,12 +25,14 @@ import { Settings } from './ui/settings.js';
 import { PanelChrome } from './ui/panelchrome.js';
 import { SettingsPanel } from './ui/settingspanel.js';
 import { GearboxSettings } from './ui/gearbox.js';
+import { Dash } from './ui/dash.js';
 import { HandTrackingSource } from './input/handsource.js';
 import { Shifter, ShiftGate } from './input/shifter.js';
 import { WheelSource, HOLD_FOR_REVERSE } from './input/wheelsource.js';
 import { WheelPanel } from './ui/wheelpanel.js';
 import { NativeWheels } from './input/nativewheels.js';
-import { lockRange } from './input/wheels.js';
+import { lockRange, parseIds } from './input/wheels.js';
+import { ControlMirror, mirroredControls } from './input/mirror.js';
 import { RimPanel } from './ui/rimpanel.js';
 import { PedalSet } from './input/pedalset.js';
 import { PedalSetPanel } from './ui/pedalsetpanel.js';
@@ -194,6 +196,63 @@ async function main() {
   const toast = new Toast(document.getElementById('toast'));
   // Inside the desktop shell on Linux, wheels come through the hardware
   // helper, which finds them without being touched and can turn them.
+  /**
+   * The real rim's shift LEDs, showing exactly what the wheel on screen
+   * shows — its lit LEDs spread across the rim's ten — or, for a model with
+   * no lights of its own, the revs on the same thresholds. Moza rims, over
+   * the base's serial port; switched off in settings, they go dark.
+   */
+  let ledDevice = null;
+  const RIM_LEDS = 10;
+  const driveRimLeds = (telemetry) => {
+    if (!native) return;
+    const wanted = settings.get('wheelLeds') && settings.get('wheel') && wheelSource.connected && wheelSource.isMoza;
+    if (!wanted || ledDevice !== wheelSource.deviceId) {
+      if (native.leds) native.ledsStop();
+      ledDevice = wanted ? wheelSource.deviceId : null;
+      if (!wanted) return;
+    }
+    if (!native.leds) native.ledsStart();
+    if (native.leds.state !== 'ok') return;
+    let mask = 0;
+    if (rig.wheel?.revLights) mask = rig.wheel.revLights.mask(RIM_LEDS);
+    else {
+      const f = telemetry?.rpmFraction ?? 0;
+      for (let i = 0; i < RIM_LEDS; i++) if (f >= (i + 1) / (RIM_LEDS + 1)) mask |= 1 << i;
+    }
+    native.sendLeds(mask);
+  };
+
+  /** Whether the driver has picked a wheel this session (T, the menu). */
+  let wheelChosen = false;
+  /** The wheel model for a connected device, if the rig has one of it. */
+  const twinFor = (deviceId) => {
+    if (!deviceId) return null;
+    const { vendor } = parseIds(deviceId);
+    return TEAM_IDS.find((id) => TEAMS[id].hardware?.vendor && TEAMS[id].hardware.vendor === vendor) ?? null;
+  };
+
+  /**
+   * The real wheel mirrored on its twin on screen — buttons, d-pad, paddles
+   * and rotaries — whenever the wheel plugged in is the one being shown.
+   * See `ControlMirror`.
+   */
+  const mirror = new ControlMirror();
+  let mirrorFor = null;
+  const mirrorControls = () => {
+    const hw = rig.spec?.hardware;
+    if (!hw || !rig.wheel || !wheelSource.connected || !settings.get('wheel')) return;
+    const pad = wheelSource.pads.find((p) => p.id === wheelSource.deviceId);
+    if (!pad || parseIds(pad.id).vendor !== hw.vendor) return;
+    // A different device or a different model: start counting afresh.
+    const key = `${pad.id}|${rig.teamId}`;
+    if (mirrorFor !== key) { mirror.reset(); mirrorFor = key; }
+    const { press, pull, turn } = mirror.read(pad, mirroredControls(rig.spec));
+    for (const id of press) rig.wheel.press(id);
+    for (const id of pull) rig.wheel.pull(id);
+    for (const [id, steps] of turn) rig.wheel.turn(id, steps);
+  };
+
   const bridge = NativeWheels.bridge;
   const native = bridge && await bridge.available().catch(() => false)
     ? new NativeWheels(bridge) : null;
@@ -204,9 +263,16 @@ async function main() {
     onCentred: () => controller.recentre(),
     onShift: (direction) => shift(direction, 'paddle'),
     onGear: (gear) => selectGear(gear, 'wheel'),
-    onDevice: ({ type, name, mapped }) => toast.show(type === 'connected'
-      ? `${name} connected${wheelSource.rotationKnown ? (mapped ? '' : ' — press S to map its paddles') : ' — assuming ±360° until you click Calibrate on WHEEL BASE'}`
-      : `${name} disconnected`),
+    onDevice: ({ type, name, mapped }) => {
+      // A real wheel the rig has a model of — the R3's ES — is put on screen
+      // as it connects, so its buttons have their twins to press. Only while
+      // the driver has not chosen a wheel themselves this session.
+      const twin = type === 'connected' && !wheelChosen ? twinFor(wheelSource.deviceId) : null;
+      if (twin && twin !== rig.teamId) mountWheel(twin);
+      toast.show(type === 'connected'
+        ? `${name} connected${twin ? ` — showing the ${TEAMS[twin].name} (T to change)` : ''}${wheelSource.rotationKnown ? (mapped ? '' : ' — press S to map its paddles') : ' — assuming ±360° until you click Calibrate on WHEEL BASE'}`
+        : `${name} disconnected`);
+    },
   });
   wheelSource.enabled = settings.get('wheel');
   wheelSource.force.enabled = settings.get('wheelForce');
@@ -357,6 +423,8 @@ async function main() {
   });
 
   const gearbox = new GearboxSettings(settings);
+  // Speed, gear and revs across the scene, for a wheel with no screen.
+  const dash = new Dash(settings);
   const settingsPanel = new SettingsPanel({
     settings,
     chrome,
@@ -443,6 +511,7 @@ async function main() {
   app.renderer.shadowMap.needsUpdate = true;
 
   const cycleTeam = (dir) => {
+    wheelChosen = true;
     const i = TEAM_IDS.indexOf(rig.teamId);
     mountWheel(TEAM_IDS[(i + dir + TEAM_IDS.length) % TEAM_IDS.length]);
   };
@@ -494,6 +563,7 @@ async function main() {
     rig.wheel.setAngle(angle);
     // After the steering source has read, so the named hands are current.
     shifter.update();
+    mirrorControls();
 
     // Feet drive the car, but only once they have actually been seen.
     //
@@ -532,6 +602,8 @@ async function main() {
     // A remembered downshift landing, now that the speed allows it.
     if (sim.queuedShift) lastShift = { direction: -1, from: 'waited', at: performance.now() };
     rig.wheel.update(dt, telemetry);
+    driveRimLeds(telemetry);
+    dash.update(telemetry, rig.spec);
     if (chrome.isVisible('car')) carPanel.update(telemetry);
     environment.update(dt, elapsed);
     // A preview nobody can see does not need the frame blitted into it, but
@@ -596,7 +668,7 @@ async function main() {
     recentre: () => { if (!wheelSource.centre()) controller.recentre(); },
     calibrateCentre: () => wheelSource.calibrateCentre(),
     toggleHud: () => hud.toggle(),
-    setTeam: (id) => mountWheel(id),
+    setTeam: (id) => { wheelChosen = true; return mountWheel(id); },
     camera: (on) => toggleCamera(on),
     cameraOn: () => tracker.running,
     recalibrate: () => handSource.recalibrate(),

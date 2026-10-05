@@ -56,14 +56,19 @@ export function buildSpec(teamId = DEFAULT_TEAM) {
     // Composed from the measured outline rather than written by hand, so the
     // quoted width cannot drift away from the shape it describes.
     // Grips hung beside the body (Mercedes) are part of the wheel's width.
-    subtitle: `${team.tagline.split(' · ')[0]} · ${((team.grip.detached ? Math.max(halfWidth, team.grip.centreX + team.grip.halfWidth) * 2 : shell.width) * 1000).toFixed(0)} mm · ${team.tagline.split(' · ').slice(1).join(' · ')}`,
+    subtitle: `${team.tagline.split(' · ')[0]} · ${((team.grip.rim ? (team.grip.rim.outerWidth ?? (team.grip.rim.radius + team.grip.rim.width / 2) * 2)
+      : team.grip.detached ? Math.max(halfWidth, team.grip.centreX + team.grip.halfWidth) * 2 : shell.width) * 1000).toFixed(0)} mm · ${team.tagline.split(' · ').slice(1).join(' · ')}`,
+    hardware: team.hardware ?? null,
+    dpads: team.dpads ?? [],
     livery: team.livery,
     shell,
     // A housing deeper above or below the glass than beside it gives its own
     // top and bottom margins.
-    screen: { bezelTop: team.screen.bezel, bezelBottom: team.screen.bezel, ...team.screen },
-    lightBar: team.lightBar,
-    leds: buildLeds(team.lightBar),
+    // A wheel may have no screen and no shift lights at all — a sim wheel
+    // like Moza's ES — in which case both are null.
+    screen: team.screen ? { bezelTop: team.screen.bezel, bezelBottom: team.screen.bezel, ...team.screen } : null,
+    lightBar: team.lightBar ?? null,
+    leds: team.lightBar ? buildLeds(team.lightBar) : [],
     buttons: team.buttons,
     rotaries: team.rotaries,
     rollers: team.rollers ?? [],
@@ -81,7 +86,8 @@ export function buildSpec(teamId = DEFAULT_TEAM) {
       countSided(team.grip.thumbRotaries) +
       countSided(team.grip.thumbButtons) +
       (team.rollers ?? []).length +
-      4,                                    // the paddles
+      (team.dpads ?? []).length * 4 +       // a d-pad is four buttons
+      (team.paddles?.clutch === 'none' ? 2 : 4),   // the paddles
   };
 }
 
@@ -96,6 +102,17 @@ function buildLeds(bar) {
   // Inside a display module — the Mercedes — the fifteen run the width of
   // the glass above the screen, and the flags stand in short vertical stacks
   // either side of it rather than at the ends of a bar.
+  // A plain strip of any number of LEDs (a sim wheel's), coloured one by
+  // one, with no flag lights.
+  if (bar.count) {
+    const n = bar.count;
+    const span = bar.width / 2 - bar.width / (n * 2);
+    return Array.from({ length: n }, (_, i) => ({
+      x: -span + (i / (n - 1)) * span * 2, y: bar.y, kind: 'rev', index: i,
+      colour: bar.colours?.[i] ?? (i < n / 3 ? 'green' : i < (2 * n) / 3 ? 'red' : 'blue'),
+      threshold: (i + 1) / (n + 1),
+    }));
+  }
   if (bar.flags === 'stacked') {
     const out = [];
     const n = 15;
@@ -151,15 +168,19 @@ function buildLeds(bar) {
  */
 function buildPaddles(shell, team) {
   const w = shell.halfWidth;
+  const pd = team.paddles ?? {};
   const shift = (side, id) => ({
-    id, side, z: -0.0250, innerX: 0.0445, outerX: w * (team.paddles?.shiftReach ?? 0.855),
-    y: team.paddles?.shiftY ?? 0.0060, height: team.paddles?.shiftHeight ?? 0.0560,
-    bend: 0.0290, label: side < 0 ? 'DOWN' : 'UP',
+    id, side, z: pd.z ?? -0.0250, innerX: pd.innerX ?? 0.0445, outerX: pd.outerX ?? w * (pd.shiftReach ?? 0.855),
+    y: pd.shiftY ?? 0.0060, height: pd.shiftHeight ?? 0.0560,
+    bend: pd.bend ?? 0.0290, label: side < 0 ? 'DOWN' : 'UP', material: pd.material,
+    hid: side < 0 ? pd.hid?.down : pd.hid?.up,
   });
 
   const out = [shift(-1, 'downshift'), shift(1, 'upshift')];
 
-  if (team.paddles?.clutch === 'wishbone') {
+  if (pd.clutch === 'none') {
+    // A sim wheel: just the two shift paddles.
+  } else if (team.paddles?.clutch === 'wishbone') {
     // One paddle spanning the centreline rather than a pair.
     out.push({
       id: 'clutch', side: 1, z: -0.0455, innerX: -w * 0.34, outerX: w * 0.34,

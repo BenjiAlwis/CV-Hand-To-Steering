@@ -528,6 +528,12 @@ console.log('\nshifting, from either side');
   ok('a finger flick in the other direction does', gate.accept(-1, 'fingers', 1300));
   ok('and the same input again later always does', gate.accept(-1, 'paddle', 1700));
   ok('fingers on their own shift as before', new ShiftGate().accept(1, 'fingers', 0));
+  const early = new ShiftGate();
+  early.accept(1, 'fingers', 2000);
+  ok('when the camera sees the finger before the paddle registers, the paddle is not a second shift',
+    !early.accept(1, 'paddle', 2060));
+  ok('but pulling that paddle again straight away is', early.accept(1, 'paddle', 2200));
+  ok('and its own finger echo is still dropped', !early.accept(1, 'fingers', 2260));
 }
 
 console.log('\nfingers while the real rim is steering');
@@ -1023,6 +1029,96 @@ console.log('\nhow far this wheel really turns');
   ok('typing a rotation in counts as known too', src.rotation === 450 && src.rotationKnown);
   src.setRotation(20);
   ok('but nonsense is ignored', src.rotation === 450);
+}
+
+console.log('\npaddle pulls are never lost between frames');
+{
+  const pad = wheelPad();
+  pad.presses = new Array(16).fill(0);
+  const native = { pads: [pad], moza: { state: 'absent', values: {} }, canDrive: () => false };
+  const shifts = [];
+  const src = new WheelSource({ native, onShift: (d) => shifts.push(d) });
+  src.poll();
+  src.mapping = { ...src.mapping, up: { pad: pad.id, kind: 'button', index: 5 }, down: { pad: pad.id, kind: 'button', index: 4 } };
+  src.poll();
+  // A click that went down and came back up between two frames: the state
+  // the frame sees is "up", but the helper counted the press.
+  pad.presses[5]++;
+  src.poll();
+  ok('a click shorter than a frame still shifts', shifts.length === 1 && shifts[0] === 1, JSON.stringify(shifts));
+  pad.presses[5] += 2;
+  src.poll();
+  ok('two quick pulls between frames are two shifts', shifts.length === 3, JSON.stringify(shifts));
+  // Held down across several frames: one press, one shift.
+  pad.presses[4]++; press(pad, 4);
+  for (let i = 0; i < 5; i++) src.poll();
+  press(pad, 4, false); src.poll();
+  ok('a pull held down for several frames is one shift', shifts.filter((d) => d === -1).length === 1, JSON.stringify(shifts));
+  // Remapped to a button with a long history: that history is not pulls.
+  pad.presses[9] = 40;
+  src.mapping = { ...src.mapping, up: { pad: pad.id, kind: 'button', index: 9 } };
+  src.poll();
+  ok('remapping a paddle does not replay the new button\'s past presses', shifts.length === 4, JSON.stringify(shifts));
+}
+{
+  // The browser's Gamepad API keeps no count: a press is caught while held.
+  const pad = wheelPad();
+  const shifts = [];
+  const src = new WheelSource({ getPads: () => [pad], onShift: (d) => shifts.push(d) });
+  src.poll();
+  src.mapping = { ...src.mapping, up: { pad: pad.id, kind: 'button', index: 5 } };
+  press(pad, 5); src.poll(); src.poll(); press(pad, 5, false); src.poll();
+  ok('without counts, a held press still shifts once', shifts.length === 1);
+}
+
+console.log('\nthe real wheel, mirrored on its twin');
+{
+  const { buildSpec } = await import('../src/wheel/spec.js');
+  const { ControlMirror, mirroredControls } = await import('../src/input/mirror.js');
+  const es = buildSpec('mozaES');
+  const controls = mirroredControls(es);
+  ok('every ES control has a real twin: 22 buttons and 2 paddles',
+    controls.filter((c) => c.kind === 'button').length === 22 && controls.filter((c) => c.kind === 'paddle').length === 2,
+    `${controls.length} controls`);
+  ok('no two controls claim the same button', new Set(controls.map((c) => c.hid)).size === controls.length);
+
+  const pad = { id: 'Gudsen R3 Racing Wheel and Pedals (Vendor: 346e Product: 0005)', buttons: new Array(128).fill(0), presses: new Array(128).fill(0) };
+  const m = new ControlMirror();
+  m.read(pad, controls);
+  const tap = (hid) => { pad.presses[hid - 1]++; };
+  // A (1) tapped between frames, Y (3) held down.
+  tap(1); pad.buttons[2] = 1; tap(3);
+  let r = m.read(pad, controls);
+  ok('a tap shorter than a frame shows on its twin', r.press.includes('a'));
+  ok('a held button shows', r.press.includes('y'));
+  r = m.read(pad, controls);
+  ok('and keeps showing while held, while the tap is over', r.press.includes('y') && !r.press.includes('a'));
+  pad.buttons[2] = 0;
+  ok('let go, it lets go', !m.read(pad, controls).press.includes('y'));
+  tap(14);
+  ok('the right paddle pulls the upshift flap', m.read(pad, controls).pull.includes('upshift'));
+  tap(13); pad.buttons[12] = 1;
+  ok('the left the downshift flap', m.read(pad, controls).pull.includes('downshift'));
+  ok('held, it stays pulled', m.read(pad, controls).pull.includes('downshift'));
+  pad.buttons[12] = 0;
+  tap(6);
+  ok('the d-pad\'s right rocks the d-pad right', m.read(pad, controls).press.includes('dpadRight'));
+
+  // A rotary reporting a click each way, as most sim-wheel encoders do.
+  const dial = [{ kind: 'encoder', id: 'bias', cw: 40, ccw: 41 }];
+  const e = new ControlMirror();
+  e.read(pad, dial);
+  pad.presses[39] += 3; pad.presses[40] += 1;
+  const t = e.read(pad, dial).turn;
+  ok('a rotary clicked round turns its twin by the net clicks', t.length === 1 && t[0][0] === 'bias' && t[0][1] === 2, JSON.stringify(t));
+  ok('and only once', e.read(pad, dial).turn.length === 0);
+
+  // Without counts (the browser), a press shows while it is down.
+  const bare = { id: pad.id, buttons: new Array(128).fill(0) };
+  const b = new ControlMirror();
+  b.read(bare, controls);
+  bare.buttons[18] = { pressed: true, value: 1 };
+  ok('in the browser a held button still shows', b.read(bare, controls).press.includes('neutral'));
 }
 
 console.log('\nrim safety: the motor never turns a base with no wheel on it');

@@ -117,6 +117,29 @@ export function buildFaceplateTextures(carbon, spec, { pixelsPerMetre = 7600 } =
     a.clip(bare, 'evenodd');
     a.fillStyle = p.colour;
     a.fillRect(0, 0, W, H);
+    // Panels of another shade on the same part — a sim wheel's lighter
+    // upper wings — each given as its right half and mirrored.
+    for (const patch of p.patches ?? []) {
+      for (const half of [1, -1]) {
+        a.beginPath();
+        patch.points.forEach(([x, y], i) => (i ? a.lineTo(X(half * x), Y(y)) : a.moveTo(X(half * x), Y(y))));
+        a.closePath();
+        a.fillStyle = patch.colour;
+        a.fill();
+      }
+    }
+    // Brushed metal: fine streaks running across the plate.
+    if (p.brushed) {
+      let seed = 7;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < H * 1.4; i++) {
+        const y = rnd() * H;
+        a.globalAlpha = 0.03 + rnd() * 0.05;
+        a.fillStyle = rnd() > 0.5 ? '#ffffff' : '#000000';
+        a.fillRect(0, y, W, Math.max(1, S(0.00008)));
+      }
+      a.globalAlpha = 1;
+    }
     a.restore();
     for (const ctx of [r, k]) {
       ctx.save();
@@ -191,11 +214,46 @@ export function buildFaceplateTextures(carbon, spec, { pixelsPerMetre = 7600 } =
     roundRect(r, px - pw / 2, py - ph / 2, pw, ph, pr); r.fill();
   };
 
+  // Bright machined chamfers, printed as strokes (mirrored).
+  for (const st of artwork.strokes ?? []) {
+    for (const half of [1, -1]) {
+      a.beginPath();
+      st.points.forEach(([x, y], i) => (i ? a.lineTo(X(half * x), Y(y)) : a.moveTo(X(half * x), Y(y))));
+      a.strokeStyle = st.colour;
+      a.lineWidth = S(st.width);
+      a.lineCap = 'round';
+      a.lineJoin = 'round';
+      a.stroke();
+    }
+  }
+
   // Every recess is cut before any ink goes down, so a neighbouring pocket
   // can never paint over a legend that was already printed.
   // A dial printed on the face (a band) has its knob standing on the print.
   for (const rot of rotaries) if (!rot.band) pocket(rot.x, rot.y, rot.radius * 1.12, 0.85);
-  for (const b of buttons) pocket(b.x, b.y, b.radius * 1.17);
+  for (const b of buttons) {
+    // A rectangular button sits in a rectangular slot.
+    if (b.size) slot(b.x, b.y, b.size[0] * 1.18, b.size[1] * 1.3, Math.min(b.size[0], b.size[1]) * 0.4, 0.9);
+    else pocket(b.x, b.y, b.radius * 1.17);
+  }
+  // Screw dimples: a shallow pocket with a hex socket in it.
+  for (const [dx, dy, dr] of shell.dimples ?? []) {
+    for (const side of dx === 0 ? [1] : [1, -1]) {
+      pocket(side * dx, dy, dr, 0.55);
+      a.save();
+      a.translate(X(side * dx), Y(dy));
+      a.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const t = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const rr = S(dr * 0.38);
+        if (i) a.lineTo(Math.cos(t) * rr, Math.sin(t) * rr); else a.moveTo(Math.cos(t) * rr, Math.sin(t) * rr);
+      }
+      a.closePath();
+      a.fillStyle = 'rgba(0,0,0,0.75)';
+      a.fill();
+      a.restore();
+    }
+  }
   // Thumb rollers sit in slots let into the carbon.
   for (const t of rollers) if (!t.lift) pocket(t.x, t.y, t.radius * 1.15, 0.9);
 
@@ -399,7 +457,7 @@ export function buildFaceplateTextures(carbon, spec, { pixelsPerMetre = 7600 } =
   }
 
   /* ── 5. display + rev-light recesses ─────────────────────────────── */
-  {
+  if (screen) {
     const top = screen.y + screen.height / 2 + screen.bezelTop;
     const bottom = screen.y - screen.height / 2 - screen.bezelBottom;
     slot(screen.x, (top + bottom) / 2, screen.width + screen.bezel * 2, top - bottom, screen.radius, 1);
@@ -407,10 +465,10 @@ export function buildFaceplateTextures(carbon, spec, { pixelsPerMetre = 7600 } =
     if (up) slot(screen.x, (top + up.bottom) / 2, up.halfWidth * 2, top - up.bottom, screen.radius, 1);
   }
   // A bar inside the display module needs no slot in the carbon of its own.
-  if (!lightBar.inScreen) slot(0, lightBar.y, lightBar.width, lightBar.height, lightBar.radius, 0.9);
+  if (lightBar && !lightBar.inScreen) slot(0, lightBar.y, lightBar.width, lightBar.height, lightBar.radius, 0.9);
 
   /* ── 6. livery + build data ──────────────────────────────────────── */
-  if (livery.stripe && !lightBar.inScreen) {
+  if (livery.stripe && lightBar && !lightBar.inScreen) {
     // The 12 o'clock reference stripe, sitting between the bar and the edge.
     const stripeY = (lightBar.y + lightBar.height / 2 + shell.topY) / 2;
     const stripeH = Math.min(0.0070, (shell.topY - lightBar.y - lightBar.height / 2) * 0.62);

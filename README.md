@@ -192,6 +192,33 @@ drives, so the rim doesn't overshoot and wobble where it stops. The rig's
 wheel follows the rim through a filter that is steady when the rim is still
 and opens up at once for a fast turn.
 
+**The Moza ES**, the wheel in the R3 bundles, has a model of its own, built
+from the dimensioned front view in Moza's manual and its button-numbering
+guide: the 280 mm D-shaped leather rim with its silver marker, the brushed
+aluminium plate, all 22 buttons and both paddles, and the ten shift LEDs.
+Plug in an R3 and the ES comes up by itself, unless you have already
+picked a wheel. With it on screen, the model copies the real wheel:
+a button held is its cap held down (a quick tap still shows, however
+short), the d-pad rocks toward the direction pressed, and a paddle pulled
+pulls its flap, whether or not the gearbox takes the shift. Wheels with
+rotary encoders turn their knobs by the same number of clicks; the ES has
+none (its RADIO and START are push buttons).
+
+**The dash.** A strip across the bottom of the scene (or the top) shows
+speed, gear, revs, the lap and the pedals. It is on **Auto** by default:
+shown for a wheel with no display of its own, like the Moza ES, so you can
+always see what gear you are in, and hidden for the F1 wheels, which show
+it on their screens. Set it to Always or Never in settings, under PANELS
+ON SCREEN or STEERING WHEEL; <kbd>H</kbd> hides it with the rest of the HUD.
+
+**The wheel's own shift lights.** A Moza rim with shift LEDs, such as the
+ES, lights them exactly as the wheel on screen lights its own: the same
+LEDs at the same moment, flashing at the shift point. The app sends the
+pattern over the base's serial port, the way Boxflat's LED test does, and
+only changes what is lit, never a setting. A rim set not to take revs from
+a computer is reported, not changed. Turn it off under STEERING WHEEL in
+settings, and the lights go dark; they also go dark when the app closes.
+
 **Gear ratios** are in settings (<kbd>S</kbd>), under STEERING WHEEL. Each of
 the eight gears is set by its top speed at the rev limit, in km/h, which is
 the same thing as its ratio said another way: a shorter gear multiplies the
@@ -289,7 +316,7 @@ turn is asked for a quarter turn instead. Or type the wheel's rotation into
 | `V` | camera on / off |
 | `Z` | re-zero your hands |
 | `N` | neutral; hold for reverse |
-| `T` | change wheel (Ferrari → Mercedes → Red Bull → Basic wheel 1) |
+| `T` | change wheel (Ferrari → Mercedes → Red Bull → Basic wheel 1 → Moza ES) |
 | `C` | free orbit camera |
 | `1` `2` `3` | driver / three-quarter / detail framing |
 | `4` `5` | from behind the wheel: rear three-quarter / rear low |

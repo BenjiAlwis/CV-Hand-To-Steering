@@ -30,6 +30,8 @@ export const DEFAULTS = {
   /** Let the rig turn a force-feedback rim to match it, and how hard. */
   wheelForce: true,
   wheelStrength: 0.3,
+  /** Show the rig's revs on a real rim's own shift LEDs, where it has them. */
+  wheelLeds: true,
   /**
    * The motor only turns a base with a wheel shown to be fitted. Back on at
    * every launch, however it was left: turning it off is a choice made for
@@ -50,6 +52,12 @@ export const DEFAULTS = {
   traction: false,
   /** Never lets the tyres lock under braking. Not allowed in F1. */
   abs: false,
+  /**
+   * The dash — speed, gear, revs — across the scene: 'auto' shows it for a
+   * wheel with no display of its own, 'on' and 'off' override that.
+   */
+  dash: 'auto',
+  dashPosition: 'bottom',
   /** The gearbox: each gear's top speed in km/h, or null for the standard one. */
   gearRatios: null,
   /** Graphics quality: low, medium, high or ultra. */

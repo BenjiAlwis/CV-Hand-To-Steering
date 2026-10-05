@@ -240,6 +240,20 @@
     </div>
 
 
+    <div class="dash" id="dash" data-position="bottom" hidden aria-label="speed, gear and revs">
+      <div class="dash-revs" id="dashRevs"></div>
+      <div class="dash-row">
+        <div class="dash-cell dash-speed"><b id="dashSpeed">0</b><em>KM/H</em></div>
+        <div class="dash-gear" id="dashGear" data-kind="neutral">N</div>
+        <div class="dash-cell dash-lap"><b id="dashLap">0:00.00</b><em id="dashDelta" data-tone="ahead">−0.00</em></div>
+      </div>
+      <div class="dash-foot">
+        <span class="dash-bar thr"><i id="dashThr"></i></span>
+        <span class="dash-rpm"><b id="dashRpm">0</b> RPM</span>
+        <span class="dash-bar brk"><i id="dashBrk"></i></span>
+      </div>
+    </div>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <div class="settings-sheet" id="settings" aria-hidden="true">
@@ -327,6 +341,11 @@
               <input type="checkbox" id="setRimGuard">
               <span><b>Only move the motor with a wheel fitted</b><em>Centre, Calibrate and turning the rim to match the rig wait until a wheel is shown to be on the base — a press of any of its buttons, the rim answering the base (Moza rims that can), or your word for it. And if the rotor ever spins far faster than it is being driven, the motor lets go at once. On every time the rig starts.</em></span>
             </label>
+            <label class="set-row wheel-leds">
+              <input type="checkbox" id="setWheelLeds">
+              <span><b>Show the revs on the wheel's own lights</b><em>A wheel with shift LEDs of its own (Moza's ES and others) lights them exactly as the wheel on screen lights its own — same LEDs, same moment, flashing at the shift point. They go dark when this is off.</em></span>
+            </label>
+            <p class="set-note wheel-led-note" id="wheelLedNote" hidden></p>
             <div class="set-cam-row wheel-strength"><label for="wheelStrength">Force</label><input type="range" id="wheelStrength" min="0.05" max="1" step="0.05"><b id="wheelStrengthValue">30%</b></div>
             <div class="wheel-base" id="wheelBase" hidden>
               <div class="set-group-name">MOZA BASE</div>
@@ -346,6 +365,11 @@
               <button class="set-button" id="wheelReset" type="button">Reset</button>
             </div>
           </div>
+          <div class="set-cam-row wheel-dash"><label for="wheelDash">Dash</label><select id="wheelDash">
+            <option value="auto">Auto — when this wheel has no screen</option>
+            <option value="on">Always shown</option>
+            <option value="off">Never shown</option>
+          </select></div>
           <div class="gear-ratios" id="gearRatios">
             <div class="set-group-name">GEAR RATIOS</div>
             <p class="set-note gear-note">Each gear's top speed at the rev limit, in km/h. A shorter gear (lower number) pulls harder but runs out sooner; a taller one reaches more speed with less push. Each has to be taller than the one before.</p>
@@ -379,6 +403,16 @@
 
         <div class="set-group">
           <div class="set-group-name">PANELS ON SCREEN</div>
+          <div class="set-cam-row"><label for="setDash">Dash</label><select id="setDash">
+            <option value="auto">Auto — for wheels with no screen</option>
+            <option value="on">Always shown</option>
+            <option value="off">Never shown</option>
+          </select></div>
+          <div class="set-cam-row"><label for="setDashPosition">Dash at</label><select id="setDashPosition">
+            <option value="bottom">Bottom of the scene</option>
+            <option value="top">Top of the scene</option>
+          </select></div>
+          <p class="set-note">The dash shows speed, gear, revs and the lap. On Auto it appears for a wheel that has no display of its own — the Moza ES — and stays away for the F1 wheels, which show the gear on their screens.</p>
           <p class="set-note">Tick the panels you want shown. Rolling one up with its − button instead keeps it on screen as a title bar, and keeps the camera running.</p>
           <div class="set-panels" id="setPanels"></div>
         </div>

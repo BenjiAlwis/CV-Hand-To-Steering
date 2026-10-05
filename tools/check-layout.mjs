@@ -19,7 +19,12 @@ const EDGE_MARGIN = 0.0016;   // keep switchgear off the moulded edge radius
 
 function checkTeam(id) {
   const spec = buildSpec(id);
-  const { shell, grip, screen, lightBar } = spec;
+  const { shell, grip } = spec;
+  // A wheel with no screen or no shift lights (a sim wheel) stands them in
+  // far off the wheel, so nothing can collide with them, and skips their
+  // own checks below.
+  const screen = spec.screen ?? { x: 0, y: 10, width: 0, height: 0, bezel: 0, bezelTop: 0, bezelBottom: 0 };
+  const lightBar = spec.lightBar ?? { y: 10, width: 0, height: 0, inScreen: true };
   const outline = shell.outline;
   const issues = [];
   const flag = (m) => issues.push(m);
@@ -74,7 +79,7 @@ function checkTeam(id) {
     if (Math.abs(a.x) + a.r > gripInnerX && behindGrip(a.y)) flag(`${a.id}: pocket falls behind a grip`);
     if (!a.noLabel && Math.abs(a.x) + a.labelHalfW > gripInnerX && behindGrip(a.labelY)) flag(`${a.id}: legend falls behind a grip`);
     // A bar inside the display module is covered by the display's own check.
-    if (!lightBar.inScreen && a.y + a.r > barBottom) flag(`${a.id}: pocket runs into the rev-light bar`);
+    if (!lightBar.inScreen && a.y + a.r > barBottom && Math.abs(a.x) - a.r < lightBar.width / 2) flag(`${a.id}: pocket runs into the rev-light bar`);
     if (onDisplay(a.x, a.y, a.r)) flag(`${a.id}: overlaps the display`);
     // A legend printed over the display is just as wrong as a pocket there.
     if (!a.noLabel && !fit && Math.abs(a.x) - a.labelHalfW < screen.width / 2 + screen.bezel &&
@@ -95,10 +100,10 @@ function checkTeam(id) {
   }
 
   // The display and the light bar have to sit on carbon too.
-  for (const [label, box] of [
+  for (const [label, box] of !spec.screen ? [] : [
     ['display', { x: screen.x, y: (dispTop + dispBottom) / 2, hw: screen.width / 2 + screen.bezel, hh: (dispTop - dispBottom) / 2 }],
     ...(upper ? [['display housing', { x: 0, y: (dispTop + upper.bottom) / 2, hw: upper.halfWidth, hh: (dispTop - upper.bottom) / 2 }]] : []),
-    ...(lightBar.inScreen ? [] : [['light bar', { x: 0, y: lightBar.y, hw: lightBar.width / 2, hh: lightBar.height / 2 }]]),
+    ...(lightBar.inScreen || !spec.lightBar ? [] : [['light bar', { x: 0, y: lightBar.y, hw: lightBar.width / 2, hh: lightBar.height / 2 }]]),
   ]) {
     for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       if (!isInside(outline, box.x + dx * box.hw, box.y + dy * box.hh)) {
@@ -109,7 +114,7 @@ function checkTeam(id) {
   }
 
   // A bar inside the display module has to sit inside its glass.
-  if (lightBar.inScreen) {
+  if (spec.lightBar?.inScreen) {
     const top = dispTop;
     if (lightBar.y + lightBar.height / 2 > top) flag('light bar: rises out of the display module');
     if (lightBar.width / 2 > Math.max(screen.width / 2 + screen.bezel, upper?.halfWidth ?? 0)) flag('light bar: wider than the display module');
@@ -134,7 +139,14 @@ function checkTeam(id) {
   // The whole grip footprint has to land on carbon, not just its centreline —
   // the outer edge at the bottom is where it actually runs off the leg. A
   // grip hung beside the body instead (Mercedes) has to be joined to it.
-  if (grip.detached) {
+  if (grip.rim) {
+    // A round wheel's rim stands clear of the plate; it only has to go round it.
+    const rim = grip.rim;
+    const innerR = (rim.radius ?? 0.1) - rim.width / 2;
+    for (const [x, y] of outline) {
+      if (Math.hypot(x, y) > innerR + 0.002 && !rim.path) { flag('the plate runs into the rim'); break; }
+    }
+  } else if (grip.detached) {
     const inner = grip.centreX - grip.halfWidth;
     if (!(grip.bridges ?? []).length && !grip.joined) flag('detached grips have no bridges to the body');
     if (inner - maxXAt(outline, grip.topY + 0.004) > 0.002) flag('detached grip top does not reach under the body');

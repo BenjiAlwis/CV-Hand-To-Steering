@@ -213,6 +213,9 @@ export class HandTrackingSource extends SteeringSource {
     if (pair) {
       const [driverRight, driverLeft] = orientPair(pair[0], pair[1]);
       this.hands = { right: driverRight, left: driverLeft };
+      // Kept even when the grip below is judged let go, for the flaps: a
+      // finger straightened to pull one loosens the grip reading too.
+      this.seenHands = this.hands;
       this._rightSlot = driverRight === pair[0] ? 0 : 1;
 
       const gripR = this.latches[0].update(driverRight.grip);
@@ -274,6 +277,7 @@ export class HandTrackingSource extends SteeringSource {
       }
       for (const latch of this.latches) latch.reset();
       this.pairs.forget();
+      this.seenHands = null;
       this._lose();
       return this._idle('show both hands');
     }

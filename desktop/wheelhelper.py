@@ -141,6 +141,12 @@ class Joystick:
         self.key_codes = [c for c in _bits(fcntl.ioctl(self.fd, EVIOCGBIT(EV_KEY, 96), bytes(96))) if c >= BTN_MISC]
         self.key_index = {c: i for i, c in enumerate(self.key_codes)}
         self.buttons = [0] * len(self.key_codes)
+        # Every press ever seen, per button. The page samples state once a
+        # frame, so a click that goes down and up between two frames — a
+        # quick paddle pull at a low frame rate — would never be seen at all;
+        # a count that only grows cannot be missed.
+        self.presses = [0] * len(self.key_codes)
+        self.pressed = False
 
         ff = _bits(fcntl.ioctl(self.fd, EVIOCGBIT(EV_FF, 16), bytes(16)))
         self.ff = self.writable and FF_SPRING in ff
@@ -188,7 +194,12 @@ class Joystick:
                     self._set_axis(code, value)
                     self.dirty = True
                 elif type_ == EV_KEY and code in self.key_index:
-                    self.buttons[self.key_index[code]] = 1 if value else 0
+                    i = self.key_index[code]
+                    # 1 is a press, 0 a release, 2 an autorepeat (not a press).
+                    if value == 1 and not self.buttons[i]:
+                        self.presses[i] += 1
+                        self.pressed = True
+                    self.buttons[i] = 1 if value else 0
                     self.dirty = True
 
     def follow(self, centre, strength):
@@ -268,6 +279,16 @@ MOZA_BASE = 19
 # A wheel fitted to the base answers on one of these, to reads in group 64.
 RIM_DEVICES = (23, 21)
 RIM_READ = 64
+
+# A rim's shift LEDs, driven live from the rig (as Boxflat's LED test does).
+# Two protocols, by the age of the rim:
+#   new  — group 63, command 26 0, the ten LEDs as two little-endian bytes;
+#          the rim must be in telemetry mode (wheel telemetry-mode = 1).
+#   old  — group 65, command 253 222, a 4-byte bitmask; for the ES family,
+#          which answers on the base's own id. Its rpm-indicator-mode must be
+#          RPM (1). Both modes are only read here, never changed: a rim set
+#          otherwise is reported, and left as its owner set it.
+LED_PROBE_DEVICES = (23, 21, 19)
 
 # name: (read group, write group, command id, payload bytes, to device, from device)
 MOZA_COMMANDS = {
@@ -527,6 +548,110 @@ class MozaBase:
                 os.close(fd)
         return found
 
+    def _ask(self, fd, asks, rounds=4, window=0.08):
+        """
+        Sends read requests and returns every reply that came back whole, as
+        {(group, device id, command bytes): payload}. Reads only.
+        """
+        got = {}
+        buffer = b''
+        for _ in range(rounds):
+            for group, dev, cid, size in asks:
+                os.write(fd, moza_message(group, dev, cid, (1).to_bytes(size, 'big')))
+                time.sleep(0.002)
+            end = time.monotonic() + window
+            while time.monotonic() < end:
+                if select.select([fd], [], [], 0.01)[0]:
+                    try:
+                        buffer += os.read(fd, 512)
+                    except BlockingIOError:
+                        pass
+            frames, buffer = parse_frames(buffer)
+            for f in frames:
+                d = f[3]
+                got[(f[2] & 0x7F, ((d & 0x0F) << 4) | (d >> 4), bytes(f[4:-1]))] = True
+        return got
+
+    def find_leds(self):
+        """
+        Finds the rim's shift LEDs and whether they will take live data,
+        read-only. Returns {state, protocol, device, reason}: state 'ok' to
+        send, 'mode' when the rim is set not to accept it, 'none' when no rim
+        with LEDs answered, 'absent' with no base.
+        """
+        path = self._path()
+        if path is None:
+            return {'state': 'absent'}
+        own = self.fd is not None
+        try:
+            fd = self.fd if own else os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        except OSError as e:
+            return {'state': 'absent', 'reason': str(e)}
+        try:
+            asks = []
+            for dev in LED_PROBE_DEVICES:
+                asks.append((64, dev, [28, 0], 1))     # new: telemetry-mode
+                asks.append((64, dev, [24, 0], 2))     # old: rpm-value1
+                asks.append((64, dev, [4], 1))         # old: rpm-indicator-mode
+            # Generous: another program on the port takes some of the replies.
+            got = self._ask(fd, asks, rounds=8, window=0.12)
+        finally:
+            if not own:
+                os.close(fd)
+
+        def value(dev, cid):
+            for (group, d, payload) in got:
+                if group == 64 and d == dev and list(payload[:len(cid)]) == cid:
+                    return int.from_bytes(payload[len(cid):], 'big')
+            return None
+
+        for dev in LED_PROBE_DEVICES:
+            mode = value(dev, [28, 0])
+            if mode is not None and dev in RIM_DEVICES:
+                return ({'state': 'ok', 'protocol': 'new', 'device': dev} if mode == 1
+                        else {'state': 'mode', 'protocol': 'new', 'device': dev,
+                              'reason': 'the rim is not in telemetry mode (set it in Boxflat or Pit House)'})
+        for dev in LED_PROBE_DEVICES:
+            if value(dev, [24, 0]) is not None:
+                mode = value(dev, [4])
+                return ({'state': 'ok', 'protocol': 'old', 'device': dev} if mode == 1
+                        else {'state': 'mode', 'protocol': 'old', 'device': dev,
+                              'reason': 'the rim\'s RPM indicator is not set to RPM (set it in Boxflat or Pit House)'})
+        return {'state': 'none'}
+
+    def send_leds(self, target, mask):
+        """Lights the rim's LEDs: bit i is LED i, from the left."""
+        if target.get('state') != 'ok':
+            return
+        mask = max(0, min(0x3FF, int(mask)))
+        if target['protocol'] == 'new':
+            msg = moza_message(63, target['device'], [26, 0], bytes([mask & 255, mask >> 8]))
+        else:
+            msg = moza_message(65, target['device'], [253, 222], mask.to_bytes(4, 'big'))
+        path = self._path()
+        if path is None:
+            return
+        try:
+            if self.fd is not None:
+                os.write(self.fd, msg)
+            else:
+                # Alongside Boxflat: a write through a shared descriptor,
+                # opened once and kept while the LEDs are being driven.
+                if getattr(self, '_led_fd', None) is None:
+                    self._led_fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+                os.write(self._led_fd, msg)
+        except OSError:
+            self.close_leds()
+
+    def close_leds(self):
+        fd = getattr(self, '_led_fd', None)
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        self._led_fd = None
+
     def _path(self):
         paths = sorted(p for p in glob.glob('/dev/serial/by-id/*') if 'gudsen' in p.lower() or 'moza' in p.lower())
         return next((p for p in paths if p.endswith('-if00')), paths[0] if paths else None)
@@ -581,8 +706,10 @@ def main():
     def by_id(dev_id):
         return next((d for d in devices.values() if d.id == dev_id), None)
 
+    leds = None   # the rim's LED target while the rig is driving them
+
     def command(msg):
-        nonlocal following
+        nonlocal following, leds
         op = msg.get('op')
         if op == 'scan':
             emit({'t': 'devices', 'list': [d.describe() for d in devices.values()]})
@@ -615,6 +742,18 @@ def main():
                     moza.request(name)
         elif op == 'rim-probe':
             emit({'t': 'rim', 'present': moza.probe_rim()})
+        elif op == 'leds-start':
+            leds = moza.find_leds()
+            emit({'t': 'leds', **leds})
+        elif op == 'leds':
+            if leds:
+                moza.send_leds(leds, msg.get('mask', 0))
+        elif op == 'leds-stop':
+            if leds:
+                moza.send_leds(leds, 0)
+            moza.close_leds()
+            leds = None
+            emit({'t': 'leds', 'state': 'off'})
         elif op == 'moza-write':
             name, value = msg.get('name'), msg.get('value')
             if name == 'rotation':
@@ -686,13 +825,20 @@ def main():
                     devices.pop(link).close()
                     emit({'t': 'devices', 'list': [d.describe() for d in devices.values()]})
                     continue
-            if dev.dirty and now - dev.sent_at >= INPUT_INTERVAL:
+            # A new press goes out at once; axes alone are paced.
+            if dev.dirty and (dev.pressed or now - dev.sent_at >= INPUT_INTERVAL):
                 emit({'t': 'input', 'id': dev.id,
                       'axes': [round(a, 5) for a in dev.axes],
-                      'down': [i for i, b in enumerate(dev.buttons) if b]})
+                      'down': [i for i, b in enumerate(dev.buttons) if b],
+                      'presses': dev.presses})
                 dev.dirty = False
+                dev.pressed = False
                 dev.sent_at = now
 
+    # The shell has gone: put the rim's LEDs out rather than leave them lit.
+    if leds:
+        moza.send_leds(leds, 0)
+    moza.close_leds()
     for dev in devices.values():
         dev.close()
     moza.close()

@@ -71,6 +71,23 @@ export class RevLights {
   }
 
   /**
+   * Which of `count` real LEDs to light so they match this bar exactly:
+   * the bar's rev LEDs, lit or not as they are drawn this frame, spread
+   * across the real strip — LED i of the real strip shows whichever of the
+   * bar's LEDs sits at the same place along it. Bit i is LED i from the left.
+   */
+  mask(count) {
+    const rev = this.leds.filter((l) => l.def.kind === 'rev');
+    if (!rev.length) return 0;
+    let bits = 0;
+    for (let i = 0; i < count; i++) {
+      const j = Math.min(rev.length - 1, Math.round(((i + 0.5) / count) * rev.length - 0.5));
+      if (!rev[j].material.color.equals(this.dark)) bits |= 1 << i;
+    }
+    return bits;
+  }
+
+  /**
    * @param {number} dt
    * @param {number} rpmFraction 0..1 of the rev range
    * @param {'none'|'yellow'|'blue'|'red'} flag

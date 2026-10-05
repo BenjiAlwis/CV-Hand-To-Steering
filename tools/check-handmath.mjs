@@ -464,6 +464,24 @@ console.log('gear flaps');
   ok('but a deliberate one after the pause registers', quick.update(1.95, tt) === true);
 }
 
+console.log('flicks measured from the finger\'s own rest');
+{
+  const f = new FlickDetector();
+  let t = 0;
+  const run = (values) => values.reduce((n, v) => (t += 33, n + (f.update(v, t) ? 1 : 0)), 0);
+  // A gloved or loosely curled finger rests further out, and a flick that is
+  // partly toward the camera never reaches the absolute mark.
+  ok('a finger resting loose does not shift', run(Array.from({ length: 20 }, (_, i) => 1.30 + (i % 2 ? 0.04 : -0.04))) === 0);
+  ok('a clear flick from that rest does, short of the absolute mark', run([1.66]) === 1);
+  ok('and only once while it is out', run([1.68, 1.67, 1.66]) === 0);
+  ok('back to rest re-arms it', run([1.32, 1.31, 1.30, 1.31, 1.62]) === 1);
+  const d = new FlickDetector();
+  let u = 0;
+  let fired = 0;
+  for (let i = 0; i < 120; i++) { u += 33; if (d.update(1.25 + i * 0.002, u)) fired++; }
+  ok('a slow drift of the rest is followed, not taken for a pull', fired === 0);
+}
+
 console.log('grip latch');
 {
   const latch = new GripLatch({ engage: 0.55, release: 0.32, frames: 2 });

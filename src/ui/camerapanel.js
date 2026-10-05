@@ -377,11 +377,12 @@ export class CameraPanel {
 
     // Finger extension on each hand, scaled so a pull fills the bar.
     if (shifter) {
-      const span = (v) => Math.round(Math.max(0, Math.min(1, (v - 1.15) / 0.62)) * 100);
-      this.flapBars[0].style.width = `${span(shifter.state.left)}%`;
-      this.flapBars[1].style.width = `${span(shifter.state.right)}%`;
-      this.flapBars[0].classList.toggle('pulled', shifter.state.left > 1.72);
-      this.flapBars[1].classList.toggle('pulled', shifter.state.right > 1.72);
+      // Scaled to the detector's own trigger, absolute or from the finger's
+      // rest, so a full bar is exactly a pull.
+      this.flapBars[0].style.width = `${Math.round(shifter.state.progress.left * 100)}%`;
+      this.flapBars[1].style.width = `${Math.round(shifter.state.progress.right * 100)}%`;
+      this.flapBars[0].classList.toggle('pulled', shifter.state.pulled.left);
+      this.flapBars[1].classList.toggle('pulled', shifter.state.pulled.right);
     }
 
     const [gl, gr] = source.state.grips;

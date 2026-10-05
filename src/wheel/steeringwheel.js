@@ -120,7 +120,7 @@ export class SteeringWheel {
    */
   _liftAt(x, y) {
     const { screen } = this.spec;
-    const m = screen.module;
+    const m = screen?.module;
     if (!m?.carriesFittings) return 0;
     const top = screen.y + screen.height / 2 + screen.bezelTop;
     const bottom = screen.y - screen.height / 2 - screen.bezelBottom;
@@ -132,6 +132,10 @@ export class SteeringWheel {
 
   _buildGrips() {
     const { grip, shell } = this.spec;
+
+    // A round wheel — a sim racing wheel, a road car's — has one continuous
+    // rim rather than two grips.
+    if (grip.rim) { this._buildRim(grip.rim); return; }
 
     for (const side of [-1, 1]) {
       const geo = buildGripGeometry(side, grip, shell);
@@ -185,6 +189,34 @@ export class SteeringWheel {
 
       this._buildThumbControls(side);
     }
+  }
+
+  /**
+   * A continuous rim: a tube swept round a circle, or round any closed
+   * outline, with a rounded-rectangle section. Bands of a second material —
+   * a coloured top marker, leather grips on a rubber rim — go by angle,
+   * measured clockwise from twelve o'clock.
+   */
+  _buildRim(rim) {
+    const geo = buildRimGeometry(rim);
+    this._disposables.push(geo);
+    const pick = (name) => ({
+      silicone: this.materials.silicone, greySilicone: this.materials.greySilicone, leather: this.materials.leather,
+      sleeve: this.materials.sleeve, suede: this.materials.grip, gloss: this.materials.bezelBlack,
+    }[name] ?? this.materials.grip);
+    const mats = [pick(rim.material), ...(rim.bands ?? []).map((b) => {
+      if (!b.colour) return pick(b.material);
+      const m = new THREE.MeshPhysicalMaterial({ color: b.colour, roughness: b.roughness ?? 0.6, sheen: 0.3, sheenRoughness: 0.7 });
+      this._disposables.push(m);
+      return m;
+    })];
+    const mesh = new THREE.Mesh(geo, mats);
+    mesh.name = 'rim';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.z = rim.z ?? 0;
+    this.group.add(mesh);
+    // The thumb controls on a grip have nowhere to go on a plain rim.
   }
 
   /** Rotaries and buttons moulded into the inboard face of a grip. */
@@ -251,26 +283,38 @@ export class SteeringWheel {
     // Geometry shared between buttons of one size — most of a wheel's
     // buttons are the same part number, but not all (Red Bull's N and PIT
     // are bigger, the unmarked ones smaller).
-    const blackBezel = this.spec.livery.buttonBezel === 'black';
+    // The bezel round a cap: a thin titanium collar flush with the face, or
+    // a proud ring the cap sits down inside — glossy black (Red Bull) or
+    // bright machined silver (a sim wheel). Per button, or the wheel's own.
+    const bezelOf = (b) => (b.bezel === false ? null : b.bezel ?? this.spec.livery.buttonBezel ?? 'collar');
     const sizes = new Map();
     const partsFor = (b) => {
-      const key = `${b.radius}|${b.height}`;
+      const style = bezelOf(b);
+      const key = `${b.radius}|${b.height}|${b.size ?? ''}|${style}`;
       if (sizes.has(key)) return sizes.get(key);
-      const capGeo = buttonCapGeometry(b.radius, b.height);
-      capGeo.rotateX(Math.PI / 2);
-      // A black bezel (Red Bull) is a proud glossy ring the cap sits down
-      // inside; the others are a thin titanium collar flush with the face.
-      const collarGeo = blackBezel
-        ? bezelGeometry(b.radius * 1.08, b.radius * 1.42, 0.0026)
-        : new THREE.CylinderGeometry(b.radius * 1.19, b.radius * 1.19, 0.0010, 28, 1, true).rotateX(Math.PI / 2);
-      this._disposables.push(capGeo, collarGeo);
-      const parts = { capGeo, collarGeo };
+      let capGeo;
+      if (b.size) {
+        // A rectangular cap (a sim wheel's S1, HOME, MENU…), standing out of
+        // the face from z = 0 like the round ones.
+        const [w, h] = b.size;
+        capGeo = plateGeometry(w, h, Math.min(w, h) * 0.32, b.height * 0.7, b.height * 0.15);
+        capGeo.translate(0, 0, b.height * 0.5);
+      } else {
+        capGeo = buttonCapGeometry(b.radius, b.height);
+        capGeo.rotateX(Math.PI / 2);
+      }
+      let collarGeo = null;
+      if (style === 'black' || style === 'silver') collarGeo = bezelGeometry(b.radius * 1.08, b.radius * (b.bezelScale ?? 1.42), 0.0026);
+      else if (style === 'collar') collarGeo = new THREE.CylinderGeometry(b.radius * 1.19, b.radius * 1.19, 0.0010, 28, 1, true).rotateX(Math.PI / 2);
+      this._disposables.push(capGeo);
+      if (collarGeo) this._disposables.push(collarGeo);
+      const parts = { capGeo, collarGeo, style };
       sizes.set(key, parts);
       return parts;
     };
 
     for (const b of buttons) {
-      const { capGeo, collarGeo } = partsFor(b);
+      const { capGeo, collarGeo, style } = partsFor(b);
       const cap = new THREE.Mesh(capGeo, this._capMaterial(b.colour));
       // A cap on a raised moulding or the display housing rides up with it.
       const lift = (b.lift ?? 0) + this._liftAt(b.x, b.y);
@@ -282,27 +326,68 @@ export class SteeringWheel {
       // with the cap when it is pressed.
       if (b.labelSide === 'cap') {
         const ink = CAP_COLOURS[b.colour]?.label ?? (b.colour?.startsWith?.('#') ? '#111111' : '#ffffff');
+        const rect = !!b.size;
+        const plane = rect
+          ? new THREE.PlaneGeometry(b.size[0] * 0.92, b.size[1] * 0.82)
+          : new THREE.PlaneGeometry(b.radius * 1.55, b.radius * 1.55);
         const decal = new THREE.Mesh(
-          new THREE.PlaneGeometry(b.radius * 1.55, b.radius * 1.55),
+          plane,
           new THREE.MeshPhysicalMaterial({
-            map: capLegendTexture(b.legend ?? (b.label === 'RADIO' ? '@radio' : b.label), b.ink ?? ink, b.split), transparent: true,
-            roughness: 0.35, clearcoat: 0.6, depthWrite: false,
+            map: rect ? tabTextTexture(b.legend ?? b.label, b.ink ?? ink, b.size[0] / b.size[1])
+              : capLegendTexture(b.legend ?? ({ RADIO: '@radio', X: '@cancel' }[b.label] ?? b.label), b.ink ?? ink, b.split),
+            transparent: true, roughness: 0.35, clearcoat: 0.6, depthWrite: false,
             polygonOffset: true, polygonOffsetFactor: -2,
           }),
         );
-        decal.position.z = b.height + b.radius * 0.09 + 0.00004;
+        decal.position.z = rect ? b.height + b.height * 0.15 + 0.00004 : b.height + b.radius * 0.09 + 0.00004;
         this._disposables.push(decal.geometry, decal.material);
         cap.add(decal);
       }
 
-      // A flush printed disc (Ferrari's RF and K1) has no collar.
-      if (b.bezel !== false) {
-        const collar = new THREE.Mesh(collarGeo, blackBezel ? this.materials.bezelBlack : titanium);
-        collar.position.set(b.x, b.y, (blackBezel ? shell.frontZ : shell.frontZ - 0.0006) + lift);
+      if (collarGeo) {
+        const proud = style === 'black' || style === 'silver';
+        const collar = new THREE.Mesh(collarGeo, style === 'black' ? this.materials.bezelBlack
+          : style === 'silver' ? this.materials.bezelSilver : titanium);
+        collar.position.set(b.x, b.y, (proud ? shell.frontZ : shell.frontZ - 0.0006) + lift);
         this.shellGroup.add(collar);
       }
 
       this.buttons.set(b.id, { def: b, cap, restZ: cap.position.z, press: 0 });
+    }
+
+    // D-pads: one cross-shaped rocker carrying four buttons. Each direction
+    // is a button of its own (and the press tips the whole cross).
+    for (const d of this.spec.dpads ?? []) {
+      const a = d.arm / 2, r = d.size / 2;
+      const cross = new THREE.Shape();
+      const pts = [[-a, r], [a, r], [a, a], [r, a], [r, -a], [a, -a], [a, -r], [-a, -r], [-a, -a], [-r, -a], [-r, a], [-a, a]];
+      pts.forEach(([x, y], i) => (i ? cross.lineTo(x, y) : cross.moveTo(x, y)));
+      cross.closePath();
+      const h = d.height ?? 0.0045;
+      const geo = new THREE.ExtrudeGeometry(cross, {
+        depth: h * 0.7, bevelEnabled: true, bevelThickness: h * 0.15, bevelSize: a * 0.18, bevelSegments: 4, curveSegments: 4,
+      });
+      this._disposables.push(geo);
+      const pad = new THREE.Mesh(geo, this._capMaterial(d.colour ?? 'black'));
+      pad.position.set(d.x, d.y, shell.frontZ - 0.0010);
+      pad.castShadow = true;
+      this.shellGroup.add(pad);
+      // Arrows printed on each arm.
+      const arrowTex = capLegendTexture('▲', d.ink ?? '#c9ced6');
+      for (const [dir, ang] of [['up', 0], ['right', -Math.PI / 2], ['down', Math.PI], ['left', Math.PI / 2]]) {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(a * 1.1, a * 1.1), new THREE.MeshPhysicalMaterial({
+          map: arrowTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2,
+        }));
+        this._disposables.push(m.geometry, m.material);
+        const off = (r + a) / 2 + a * 0.15;
+        m.position.set(-Math.sin(ang) * off, Math.cos(ang) * off, h + h * 0.15 + 0.00004);
+        m.rotation.z = ang;
+        pad.add(m);
+        const id = d.ids?.[dir];
+        // Each direction rocks the cross toward itself rather than pushing
+        // the whole of it straight down.
+        if (id) this.buttons.set(id, { def: { id, hid: d.hid?.[dir] }, cap: pad, restZ: pad.position.z, press: 0, rock: dir });
+      }
     }
 
     for (const r of rotaries) {
@@ -476,8 +561,16 @@ export class SteeringWheel {
   _buildPods() {
     const { shell, pods } = this.spec;
     for (const pod of pods ?? []) {
-      for (const side of [-1, 1]) {
-        const pts = pod.points.map(([x, y]) => [side * x, y]);
+      // A part on the centreline (given as its right half, from x = 0 round
+      // to x = 0) is one shape, not two halves meeting in a seam.
+      const centred = pod.points[0][0] === 0 && pod.points.at(-1)[0] === 0;
+      for (const side of centred ? [0] : [-1, 1]) {
+        let pts = pod.points.map(([x, y]) => [side * x, y]);
+        if (centred) {
+          const right = pod.points;
+          const left = right.slice(1, -1).reverse().map(([x, y]) => [-x, y]);
+          pts = [...right, ...left];
+        }
         if (side < 0) pts.reverse();          // keep the winding anticlockwise
         const shape = roundedPolyShape(pts, pod.radius ?? 0.004);
         const bevel = Math.min(0.0018, pod.depth * 0.3);
@@ -486,10 +579,23 @@ export class SteeringWheel {
           bevelSize: bevel, bevelSegments: 5, curveSegments: 10,
         });
         this._disposables.push(geo);
+        // Extrusion UVs are in metres; a leather or rubber grain needs them
+        // in something nearer its own scale, or it shows as coarse blotches.
+        if (pod.material === 'rim' || pod.material === 'grip') {
+          const uv = geo.attributes.uv;
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 40, uv.getY(i) * 40);
+          uv.needsUpdate = true;
+        }
+        const rimMat = { silicone: this.materials.silicone, greySilicone: this.materials.greySilicone, leather: this.materials.leather }[this.spec.grip.rim?.material]
+          ?? this.materials.grip;
         const mat = pod.material === 'grip' ? (this.spec.grip.material === 'silicone' ? this.materials.silicone : this.materials.grip)
-          : pod.material === 'gloss' ? this.materials.bezelBlack : this.materials.podSatin;
+          : pod.material === 'rim' ? rimMat
+            : pod.material === 'gloss' ? this.materials.bezelBlack
+              : pod.material === 'matte' ? this.materials.housingSatin : this.materials.podSatin;
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.z = shell.frontZ - 0.0010;
+        // A moulding can start behind the face — a sim wheel's leather spokes
+        // run behind its metal plate — by `z`.
+        mesh.position.z = shell.frontZ - 0.0010 + (pod.z ?? 0);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.shellGroup.add(mesh);
@@ -619,7 +725,7 @@ export class SteeringWheel {
       const depth = tb.depth ?? 0.0040;
       const geo = plateGeometry(tb.w, tb.h, Math.min(tb.h * 0.3, 0.0015), depth, 0.0006);
       const mat = new THREE.MeshPhysicalMaterial({
-        map: tabTextTexture(tb.text, tb.ink ?? '#ffffff', tb.w / tb.h),
+        map: tabTextTexture(tb.text, tb.ink ?? '#ffffff', tb.w / tb.h, { fill: !!tb.fill }),
         roughness: 0.2, clearcoat: 1.0, clearcoatRoughness: 0.08, metalness: 0.1,
       });
       // The text texture goes on the front face only; the rest stays black.
@@ -629,7 +735,7 @@ export class SteeringWheel {
       // a plain one is just the white legend printed on the surface.
       const lift = this._liftAt(tb.x, tb.y);
       const holder = new THREE.Group();
-      holder.position.set(tb.x, tb.y, z0 + lift);
+      holder.position.set(tb.x, tb.y, z0 + lift + (tb.z ?? 0));
       holder.rotation.z = ((tb.angle ?? 0) * Math.PI) / 180;
       const face = new THREE.Mesh(new THREE.PlaneGeometry(tb.w * 0.94, tb.h * 0.9), mat);
       this._disposables.push(face.geometry);
@@ -706,6 +812,8 @@ export class SteeringWheel {
 
   _buildDisplay() {
     const { screen, shell } = this.spec;
+    // No screen on this wheel: nothing to build, nothing to update.
+    if (!screen) { this.display = null; this.screenGlow = null; return; }
     this.display = new Display(screen);
 
     // A display module — Mercedes — is a block of black glass standing proud
@@ -781,6 +889,7 @@ export class SteeringWheel {
   }
 
   _buildRevLights() {
+    if (!this.spec.lightBar) { this.revLights = null; return; }
     this.revLights = new RevLights(this.materials, this.spec);
     this.shellGroup.add(this.revLights.group);
   }
@@ -822,7 +931,7 @@ export class SteeringWheel {
       hinge.position.set(pivotX, p.y, p.z);
       hinge.rotation.y = p.wishbone ? 0 : p.side * -0.14;
 
-      const paddle = new THREE.Mesh(geo, carbonPlain);
+      const paddle = new THREE.Mesh(geo, p.material === 'alu' ? this.materials.aluDark : carbonPlain);
       paddle.position.x = p.wishbone ? length / 2 : (p.side * length) / 2;
       if (p.side < 0 && !p.wishbone) paddle.scale.x = -1;
       paddle.name = p.id;
@@ -964,6 +1073,26 @@ export class SteeringWheel {
   }
 
   /**
+   * Turns a rotary by whole detents — positive clockwise — as its real twin
+   * was turned, and remembers where it is. Its travel ends where the real
+   * switch's does; an endless encoder (no `detents`) just keeps going.
+   */
+  turn(id, steps) {
+    const r = this.rotaries.get(id);
+    if (!r || !steps) return;
+    const def = r.def;
+    const n = def.detents ?? 12;
+    const before = def.value ?? 1;
+    def.value = def.endless ? before + steps : Math.max(1, Math.min(n, before + steps));
+    const moved = def.value - before;
+    if (!moved) return;
+    // A full-circle dial (a printed band, a pointer knob) steps by a twelfth
+    // of a turn per position; a swept scale by its share of ~295°.
+    const step = def.band || def.knobStyle ? (Math.PI * 2) / n : (Math.PI * 2 * 0.82) / Math.max(1, n - 1);
+    r.dial.rotation.z -= moved * step;
+  }
+
+  /**
    * Pulls a gear flap, which snaps back on its own.
    * @param {string} id one of the ids in the team's paddle list
    */
@@ -978,16 +1107,36 @@ export class SteeringWheel {
   }
 
   update(dt, telemetry = {}) {
-    this.display.update(dt, telemetry);
-    this.revLights.update(dt, telemetry.rpmFraction ?? 0, telemetry.flag ?? 'none');
+    this.display?.update(dt, telemetry);
+    this.revLights?.update(dt, telemetry.rpmFraction ?? 0, telemetry.flag ?? 'none');
 
-    this.screenGlow.intensity = 0.012 + 0.004 * Math.sin(performance.now() * 0.0012);
+    if (this.screenGlow) this.screenGlow.intensity = 0.012 + 0.004 * Math.sin(performance.now() * 0.0012);
 
+    // A d-pad's four directions share one cross: it rocks toward whichever
+    // are pressed, gathered first so they do not undo each other.
+    const rocks = new Map();
     for (const b of this.buttons.values()) {
+      if (b.rock) {
+        const r = rocks.get(b.cap) ?? { x: 0, y: 0, z: 0, restZ: b.restZ };
+        const k = b.press * 0.16;
+        if (b.rock === 'up') r.x -= k;
+        if (b.rock === 'down') r.x += k;
+        if (b.rock === 'left') r.y -= k;
+        if (b.rock === 'right') r.y += k;
+        r.z = Math.max(r.z, b.press);
+        rocks.set(b.cap, r);
+        b.press = Math.max(0, b.press - dt * 6);
+        continue;
+      }
       if (b.press > 0) {
         b.press = Math.max(0, b.press - dt * 6);
         b.cap.position.z = b.restZ - 0.0016 * b.press;
       }
+    }
+    for (const [cap, r] of rocks) {
+      cap.rotation.x = r.x;
+      cap.rotation.y = r.y;
+      cap.position.z = r.restZ - 0.0006 * r.z;
     }
 
     for (const p of this.paddles.values()) {
@@ -1008,11 +1157,84 @@ export class SteeringWheel {
     this.group.removeFromParent();
     for (const geo of this._disposables) geo.dispose();
     this._disposables.length = 0;
-    this.display.dispose();
+    this.display?.dispose();
   }
 }
 
 /* ───────────────────────────── helpers ───────────────────────────── */
+
+/**
+ * The rim of a round wheel. Its centreline is a circle of `radius`, or the
+ * closed outline `path` ([x, y] points, any order round, joined smoothly);
+ * its section is a rounded rectangle `width` across (in the wheel's plane)
+ * by `depth` front to back, squared off by `squareness` (2 an ellipse,
+ * higher flatter-sided). Faces carry material group 0, or 1 + the index of
+ * the band in `bands` ({from, to} in degrees clockwise from twelve o'clock)
+ * their angle falls in.
+ */
+function buildRimGeometry(rim, { steps = 240, radial = 28 } = {}) {
+  const centre = (t) => {
+    if (rim.path) return rimPathPoint(rim.path, t);
+    // t from 0 at twelve o'clock, clockwise.
+    const a = Math.PI / 2 - t * Math.PI * 2;
+    return new THREE.Vector2(Math.cos(a) * rim.radius, Math.sin(a) * rim.radius);
+  };
+  const n = rim.squareness ?? 2.6;
+  const hw = rim.width / 2, hd = rim.depth / 2;
+  const positions = [], uvs = [], indices = [];
+  const ring = radial + 1;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const p = centre(t);
+    const ahead = centre((i + 1) / steps), behind = centre((i - 1 + steps) / steps);
+    const tangent = ahead.clone().sub(behind).normalize();
+    // Clockwise travel: the outward normal is the tangent turned left.
+    const out = new THREE.Vector2(-tangent.y, tangent.x);
+    for (let j = 0; j <= radial; j++) {
+      const th = (j / radial) * Math.PI * 2;
+      const c = Math.cos(th), s = Math.sin(th);
+      const ex = Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
+      const ez = Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
+      positions.push(p.x + out.x * ex * hw, p.y + out.y * ex * hw, ez * hd);
+      uvs.push(t * 24, j / radial);
+    }
+  }
+  const bandOf = (t) => {
+    const deg = t * 360;
+    const k = (rim.bands ?? []).findIndex((b) => (b.from <= b.to ? deg >= b.from && deg < b.to : deg >= b.from || deg < b.to));
+    return k + 1;
+  };
+  const groups = [];
+  for (let i = 0; i < steps; i++) {
+    const g = bandOf((i + 0.5) / steps);
+    for (let j = 0; j < radial; j++) {
+      const a = i * ring + j, b = a + ring;
+      indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const last = groups.at(-1);
+    if (last && last.g === g) last.count += radial * 6;
+    else groups.push({ g, start: i * radial * 6, count: radial * 6 });
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  for (const { g, start, count } of groups) geo.addGroup(start, count, g);
+  return geo;
+}
+
+/** A point at fraction `t` of the way round a closed outline, by arc length. */
+const rimCurves = new WeakMap();
+function rimPathPoint(path, t) {
+  let curve = rimCurves.get(path);
+  if (!curve) {
+    const pts = path.map(([x, y]) => new THREE.Vector2(x, y));
+    curve = new THREE.SplineCurve([...pts, pts[0]]);
+    rimCurves.set(path, curve);
+  }
+  return curve.getPointAt(((t % 1) + 1) % 1);
+}
 
 /**
  * A raised ring round a button or rotary: a lathed profile with a rounded

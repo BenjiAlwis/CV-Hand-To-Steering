@@ -14,6 +14,17 @@
  */
 import { FlickDetector } from '../vision/handmath.js';
 
+/** How long the flaps stay live after the grip was last held, ms. */
+const HOLD_GRACE_MS = 500;
+/**
+ * A flap pull is one finger straightening while the rest stay wrapped round
+ * the grip. If the other three are out too — mean extension past this, in
+ * hand-sizes; a fist is about 1.15, a loose grip round a rim 1.4–1.7, a
+ * flat hand 2.05 — the hand is opening, letting go of the wheel, and that is
+ * never a pull.
+ */
+const OTHERS_OPEN = 1.75;
+
 export class Shifter {
   /**
    * @param {import('./handsource.js').HandTrackingSource} source
@@ -27,18 +38,26 @@ export class Shifter {
     /** Switched off in settings, for drivers who would rather use the keys. */
     this.enabled = true;
     /** For the overlay: how far each trigger finger is currently extended. */
-    this.state = { right: 0, left: 0, armed: false };
+    this.state = { right: 0, left: 0, armed: false, pulled: { right: false, left: false }, progress: { right: 0, left: 0 } };
+    /** When the wheel was last held, ms, or null. */
+    this._heldAt = null;
   }
 
   /** Call once per frame, after the steering source has read. */
   update(nowMs = performance.now()) {
-    const hands = this.source.hands;
-
-    // Only while the wheel is actually being held. A hand waved in front of
-    // the camera should not be able to change gear. Switched off, the
-    // detectors are reset rather than merely ignored, so turning it back on
-    // cannot deliver a shift left over from a finger moved while it was off.
-    if (!this.enabled || !this.source.state.holding || !hands) {
+    // Only while the wheel is held — or was, a moment ago. Straightening a
+    // finger to pull a flap loosens the grip reading too, and on a loose or
+    // gloved grip that one frame can read as letting go; dropping the flaps
+    // there threw away exactly the pull that caused it. So they stay live for
+    // `HOLD_GRACE_MS` after the grip was last held, watching the hands the
+    // tracker last saw. A hand waved in front of a camera with no wheel held
+    // still cannot change gear. Switched off, the detectors are reset rather
+    // than merely ignored, so turning it back on cannot deliver a shift left
+    // over from a finger moved while it was off.
+    if (this.source.state.holding) this._heldAt = nowMs;
+    const recent = this._heldAt !== null && nowMs - this._heldAt <= HOLD_GRACE_MS;
+    const hands = this.source.state.holding ? this.source.hands : recent ? (this.source.seenHands ?? null) : null;
+    if (!this.enabled || !recent || !hands) {
       for (const d of Object.values(this.detectors)) d.reset();
       this.state.armed = false;
       this.state.right = 0;
@@ -48,11 +67,22 @@ export class Shifter {
     this.state.armed = true;
 
     for (const [side, direction] of [['right', 1], ['left', -1]]) {
-      const extension = hands[side]?.fingers?.[this.finger] ?? 0;
+      const extension = hands[side]?.fingers?.[this.finger];
+      // A hand missing from this frame is not a curled finger: skip it rather
+      // than feed the detector a zero that would re-arm it mid-pull.
+      if (extension === undefined) continue;
+      const detector = this.detectors[side];
       this.state[side] = extension;
-      if (this.detectors[side].update(extension, nowMs)) {
+      const f = hands[side].fingers;
+      const others = (f.middle + f.ring + f.pinky) / 3;
+      if (others > OTHERS_OPEN) {
+        // Opening the hand: hold the detector off until the finger curls back.
+        detector.armed = false;
+      } else if (detector.update(extension, nowMs, others)) {
         this.onShift(direction);
       }
+      this.state.pulled[side] = !detector.armed;
+      this.state.progress[side] = detector.progress(extension, others);
     }
   }
 }
@@ -83,10 +113,15 @@ export class ShiftGate {
    */
   accept(direction, from, nowMs = performance.now()) {
     const last = this.last;
-    if (last && last.direction === direction && last.from !== from && nowMs - last.at < this.windowMs) {
+    // One pull may arrive by more than one route — the paddle and the finger
+    // the camera saw pull it, in either order. Every route it has come by is
+    // remembered: another route inside the window is that same pull again
+    // and is dropped, while one it has already come by is a new pull.
+    if (last && last.direction === direction && !last.routes.has(from) && nowMs - last.at < this.windowMs) {
+      last.routes.add(from);
       return false;
     }
-    this.last = { direction, from, at: nowMs };
+    this.last = { direction, routes: new Set([from]), at: nowMs };
     return true;
   }
 }

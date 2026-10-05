@@ -49,7 +49,7 @@ export function capLegendTexture(label, ink, split = null) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
 
-  if (label === 'X') {
+  if (label === '@cancel') {
     // Cancel: a heavy white cross.
     g.lineWidth = size * 0.11;
     g.lineCap = 'round';
@@ -152,8 +152,8 @@ export function emblemTexture(colour = '#f6d21c') {
  *
  * @param {number} aspect the tab's width / height
  */
-export function tabTextTexture(text, ink, aspect) {
-  const key = `tab|${text}|${ink}|${aspect.toFixed(2)}`;
+export function tabTextTexture(text, ink, aspect, { fill = false } = {}) {
+  const key = `tab|${text}|${ink}|${aspect.toFixed(2)}|${fill}`;
   if (cache.has(key)) return cache.get(key);
   const H = 128, W = Math.round(H * aspect);
   const c = document.createElement('canvas');
@@ -166,7 +166,17 @@ export function tabTextTexture(text, ink, aspect) {
   g.font = `900 ${px}px ${FONT}`;
   const w = g.measureText(text).width;
   if (w > W * 0.86) { px *= (W * 0.86) / w; g.font = `900 ${px}px ${FONT}`; }
-  g.fillText(text, W / 2, H * 0.54);
+  if (fill && w < W * 0.86) {
+    // An extended wordmark: the letters stretched to the full width, as a
+    // logo's are drawn, rather than set at their natural width.
+    g.save();
+    g.translate(W / 2, 0);
+    g.scale((W * 0.9) / w, 1);
+    g.fillText(text, 0, H * 0.54);
+    g.restore();
+  } else {
+    g.fillText(text, W / 2, H * 0.54);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;

@@ -212,6 +212,17 @@ export function pedalValue(binding, pads) {
   return x <= PEDAL_DEADZONE ? 0 : (x - PEDAL_DEADZONE) / (1 - PEDAL_DEADZONE);
 }
 
+/**
+ * How many times a button has been pressed since its device appeared, where
+ * the device keeps count (the desktop helper does), or null where it does
+ * not (the browser's Gamepad API only ever says what is down right now).
+ */
+export function buttonPresses(binding, pads) {
+  const pad = padFor(binding, pads);
+  if (!pad || binding.kind !== 'button' || !Array.isArray(pad.presses)) return null;
+  return pad.presses[binding.index] ?? null;
+}
+
 export function buttonPressed(binding, pads) {
   const pad = padFor(binding, pads);
   if (!pad || binding.kind !== 'button') return false;
