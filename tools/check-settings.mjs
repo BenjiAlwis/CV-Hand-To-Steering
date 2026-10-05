@@ -117,6 +117,18 @@ console.log('\ndriving aids');
   ok('while ordinary settings are still remembered', b.get('flaps') === false);
 }
 
+console.log('\nthe gearbox');
+{
+  store = {};
+  const a = new Settings();
+  ok('starts standard', a.get('gearRatios') === null);
+  a.set('gearRatios', [70, 110, 150, 190, 225, 260, 295, 335]);
+  ok('a driver\'s own gearbox is remembered', new Settings().get('gearRatios')?.[0] === 70);
+  a.set('gearRatios', null);
+  ok('and reset goes back to standard', new Settings().get('gearRatios') === null);
+  store = {};
+}
+
 console.log('\nthe wheel-fitted check');
 {
   store = {};

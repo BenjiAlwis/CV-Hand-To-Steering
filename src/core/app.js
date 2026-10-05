@@ -256,9 +256,13 @@ export class App {
 
   start(onFrame) {
     const loop = () => {
-      const dt = Math.min(this.clock.getDelta(), 1 / 20);
+      // Animation steps are capped so a stall never throws anything across
+      // the screen; the true time is passed on too, for whatever has to keep
+      // up with the clock — the car, which must not run slow on a slow frame.
+      const real = this.clock.getDelta();
+      const dt = Math.min(real, 1 / 20);
       this.elapsed += dt;
-      onFrame(dt, this.elapsed);
+      onFrame(dt, this.elapsed, Math.min(real, 0.25));
       if (this.lens) this.lens.uniforms.time.value = this.elapsed % 100;
       if (this.dof?.enabled) this.dof.uniforms.focus.value = this.camera.position.distanceTo(this._camTarget);
       this.composer.render();

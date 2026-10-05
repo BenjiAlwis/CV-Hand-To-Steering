@@ -192,6 +192,15 @@ drives, so the rim doesn't overshoot and wobble where it stops. The rig's
 wheel follows the rim through a filter that is steady when the rim is still
 and opens up at once for a fast turn.
 
+**Gear ratios** are in settings (<kbd>S</kbd>), under STEERING WHEEL. Each of
+the eight gears is set by its top speed at the rev limit, in km/h, which is
+the same thing as its ratio said another way: a shorter gear multiplies the
+engine's torque more, so it pulls harder and runs out sooner. Each gear has
+to be at least 5 km/h taller than the one before, between 30 and 400 km/h;
+a set that breaks that is marked and not applied. Changes take effect at
+once and are remembered. **Reset to standard** puts back the standard box:
+78, 118, 158, 196, 232, 267, 298 and 330 km/h.
+
 **The motor only moves with a wheel fitted.** A wheelbase with nothing on
 it can spin its bare rotor fast and hard enough to damage the base, its
 quick release and anything attached to it. So Centre, Calibrate and Force all

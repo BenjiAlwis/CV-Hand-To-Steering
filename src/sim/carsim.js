@@ -6,11 +6,40 @@
  * it really does, the gearbox shifts on rpm, and the lap clock and delta run
  * off the resulting pace.
  */
-const RATIOS = [
-  { gear: 1, top: 78 }, { gear: 2, top: 118 }, { gear: 3, top: 158 },
-  { gear: 4, top: 196 }, { gear: 5, top: 232 }, { gear: 6, top: 267 },
-  { gear: 7, top: 298 }, { gear: 8, top: 330 },
-];
+/**
+ * The standard gearbox: each gear's top speed, in km/h, at the rev limiter.
+ * A gear's ratio and its top speed are the same thing said two ways — a
+ * shorter gear multiplies the engine's torque more, so it pulls harder and
+ * tops out sooner. The driver can set their own (see `setRatios`); these
+ * are what "reset" goes back to.
+ */
+export const STANDARD_RATIOS = [78, 118, 158, 196, 232, 267, 298, 330];
+/** What a gearbox may be set to: each gear in this range, each taller than the last by this much. */
+export const RATIO_LIMITS = { min: 30, max: 400, step: 5 };
+
+/**
+ * Whether a set of top speeds makes a gearbox, and if not, why not.
+ * @param {unknown} tops
+ * @returns {{ok: true, tops: number[]} | {ok: false, gear: number, error: string}}
+ */
+export function checkRatios(tops) {
+  if (!Array.isArray(tops) || tops.length !== STANDARD_RATIOS.length) {
+    return { ok: false, gear: 0, error: `Needs a top speed for each of the ${STANDARD_RATIOS.length} gears.` };
+  }
+  const out = [];
+  for (let i = 0; i < tops.length; i++) {
+    const v = Number(tops[i]);
+    if (!Number.isFinite(v)) return { ok: false, gear: i + 1, error: `Gear ${i + 1} needs a number.` };
+    if (v < RATIO_LIMITS.min || v > RATIO_LIMITS.max) {
+      return { ok: false, gear: i + 1, error: `Gear ${i + 1} has to be between ${RATIO_LIMITS.min} and ${RATIO_LIMITS.max} km/h.` };
+    }
+    if (i > 0 && v < out[i - 1] + RATIO_LIMITS.step) {
+      return { ok: false, gear: i + 1, error: `Gear ${i + 1} has to be at least ${RATIO_LIMITS.step} km/h taller than gear ${i}.` };
+    }
+    out.push(Math.round(v));
+  }
+  return { ok: true, tops: out };
+}
 
 const RPM_MAX = 15000;
 const RPM_IDLE = 4200;
@@ -24,11 +53,13 @@ const RPM_IDLE = 4200;
  *   drag        CdA about 1.2–1.3 m² (Cd ≈ 0.85)
  *   downforce   equal to the car's weight at about 150 km/h, 3–4× at top speed
  *   rolling     slick-tyre Crr about 0.015, on the weight *plus* downforce
- *   power       750 kW peak; 650 kW is the average that reproduces published
- *               standing starts (0–100 in 2.6 s, 0–200 in 4.8 s, 0–300 in
- *               10.5 s) — full deployment is not sustained, and the model has
- *               no shift times
- *   grip        about 1.05 g off the line, rising with downforce
+ *   power       750 kW peak; 650 kW is the average that, with the grip
+ *               and launch below, reproduces published standing starts
+ *               (0–100 in 2.6 s, 0–200 in 4.8 s, 0–300 in 10.5 s) — full
+ *               deployment is not sustained, and the model has no shift
+ *               times
+ *   grip        about 1.2 g on the rear tyres, rising with downforce, with
+ *               the clutch slipping off the line
  *
  * The point of doing it this way is lift-off. Without the brake an F1 car
  * slows at around 1 g from top speed on drag alone, because drag grows with
@@ -51,8 +82,25 @@ const POWER = 650e3;       // W, effective
 const FULL_POWER_AT = 0.7;
 const POWER_FLOOR = 0.15;
 const TORQUE_PEAK = 1.45;
-/** Rear-tyre traction off the line, in g, before downforce adds to it. */
-const GRIP_G = 1.05;
+/**
+ * Rear-tyre traction, in g, before downforce adds to it: the slick's
+ * friction lightly loaded (1.9, as for braking) on the rear axle's share of
+ * the weight while accelerating — about 55% at rest, the rules fix the split
+ * near that, plus some 8% more transferred back under a g of thrust — so
+ * 1.9 × 0.63 ≈ 1.2.
+ */
+const GRIP_G = 1.2;
+/**
+ * Off the line the clutch, not the tyres, sets the pace: it slips while it
+ * bites, holding the push to about `LAUNCH_G` from rest and handing over to
+ * the tyres by `LAUNCH_SPEED`. Estimated, to match the published standing
+ * starts with the grip above — and it is why a car rolling out of a slow
+ * corner pulls harder than its 0–100 time suggests. The old model fitted
+ * the standing start with grip alone, at 1.05 g, which made every
+ * low-speed exit too slow.
+ */
+const LAUNCH_G = 0.55;
+const LAUNCH_SPEED = 25;   // km/h
 /** Downforce equals weight at this speed (km/h), rises with its square, and is capped. */
 const DOWNFORCE_REF = 150;
 const DOWNFORCE_MAX = 4;
@@ -78,23 +126,38 @@ const ENGINE_BRAKE_MAX_G = 0.25;
 const MU_LOW = 1.9;
 const MU_LOAD = 0.27;
 /**
- * What a sliding tyre keeps of its peak grip: spinning under power, or
- * locked under braking. Published figures put a locked slick 10–40% below
- * its peak.
+ * What a sliding tyre keeps of its peak grip. A slick's force peaks at
+ * 5–15% slip and falls away gently beyond, to about three quarters of the
+ * peak at full sliding (slip ratio 1).
+ *
+ * A locked wheel is at full sliding at once, so braking loses the whole of
+ * it. Wheelspin is graded: how fast the rears spin, and so how much they
+ * lose, depends on how far the torque asked for exceeds what they can take.
+ * Just past the limit they slip a little more than ideal and keep nearly
+ * everything; flooring it in first, where the engine has several times the
+ * grip, spins them up toward full sliding. `SPIN_SCALE` sets how quickly the
+ * loss builds with the excess: half of it at about 1.8× the grip, nearly
+ * all of it by 4×. Treating every spin as full sliding — a flat 25% loss that
+ * stayed until the throttle came right back — made a flat-footed car pull
+ * 0.78 g through the whole of first gear, and 0–100 in 3.5 s.
  */
-const SPIN_KEEP = 0.75;
+const SPIN_LOSS = 0.25;
+const SPIN_SCALE = 1.2;
 const LOCK_KEEP = 0.7;
 /** How far below the limit a slide has to be brought back before the tyre bites again. */
 const RECOVER = 0.85;
 
 /**
- * Brakes. Full pedal on hot brakes asks for about 4.4 g of tyre force —
- * roughly what the tyres take at 300 km/h. That is the point of an F1 brake
- * pedal: full pressure is right at top speed and far too much by 150 km/h,
- * so without ABS the driver has to come off the pedal as the car slows or
- * lock the wheels.
+ * Brakes. Full pedal on hot brakes asks for about 4.2 g of tyre force —
+ * with the engine's overrun braking on top, just under what the tyres take
+ * at 300 km/h (4.57 g), so a driver can stand on it at top speed and get
+ * the 5 g-plus stop (tyres plus drag) F1 is known for. That is the point of
+ * an F1 brake pedal: full pressure is right at top speed and far too much by
+ * 150 km/h, so without ABS the driver has to come off the pedal as the car
+ * slows or lock the wheels. At 4.4 g the two together tipped over the limit
+ * and full pedal locked the wheels at 300.
  */
-const BRAKE_SYSTEM_G = 4.4;
+const BRAKE_SYSTEM_G = 4.2;
 /** Line pressure at full pedal, bar — for the overlay; F1 peaks are 80–100. */
 const BRAKE_BAR_MAX = 100;
 /**
@@ -169,6 +232,8 @@ export class CarSim {
     /** +1 rolling forward, −1 rolling backward. Meaningless at rest. */
     this.direction = 1;
     this.gear = gear;
+    /** The gearbox in use: each gear's top speed at the limiter. */
+    this.ratios = STANDARD_RATIOS.map((top, i) => ({ gear: i + 1, top }));
     this.rpm = RPM_IDLE;
     this.lapTime = 0;
     this.lap = 1;
@@ -261,7 +326,7 @@ export class CarSim {
      * driver is holding a gear on purpose.
      */
     const inGear = this.gear >= 1;
-    const geared = inGear ? RATIOS[this.gear - 1].top : this.gear === REVERSE ? REVERSE_TOP : RATIOS[0].top;
+    const geared = inGear ? this.ratios[this.gear - 1].top : this.gear === REVERSE ? REVERSE_TOP : this.ratios[0].top;
     /** Which way the gear drives the car: forward, backward, or not at all in neutral. */
     const gearSign = inGear ? 1 : this.gear === REVERSE ? -1 : 0;
     // The engine is only turned by the wheels when the car is rolling the
@@ -339,13 +404,23 @@ export class CarSim {
 
     // ── driving force, and wheelspin ────────────────────────────────────
     let driveG = this.torque * engineG;
+    // The clutch biting from rest: it slips rather than the tyres spinning.
+    if (inGear && this.speed < LAUNCH_SPEED) {
+      driveG = Math.min(driveG, LAUNCH_G + (driveGrip - LAUNCH_G) * (this.speed / LAUNCH_SPEED));
+    }
     if (this.assists.traction) driveG = Math.min(driveG, driveGrip * 0.97);
-    // Ask the rear tyres for more than they have and they spin; once spinning
-    // they keep less grip than they had, and stay spinning until the driver
-    // comes back off the throttle well below the limit.
-    if (driveG > driveGrip) this.wheelspin = true;
-    else if (driveG < driveGrip * RECOVER) this.wheelspin = false;
-    if (this.wheelspin) driveG = Math.min(driveG, driveGrip * SPIN_KEEP);
+    // Ask the rear tyres for more than they have and they spin. How much
+    // they lose depends on how hard they are over-driven: a little past the
+    // limit costs a little, a flat foot in first costs up to a quarter.
+    // Once spinning, the spin is only called over when the throttle comes
+    // back below the limit with some margin, as a driver catching it would.
+    const excess = driveG / Math.max(driveGrip, 1e-6);
+    if (excess > 1) this.wheelspin = true;
+    else if (excess < RECOVER) this.wheelspin = false;
+    if (excess > 1) {
+      const keep = 1 - SPIN_LOSS * (1 - Math.exp(-(excess - 1) / SPIN_SCALE));
+      driveG = driveGrip * keep;
+    }
 
     // ── braking force, and lock-up ──────────────────────────────────────
     // Only on the overrun: the torque map crosses from drag to drive within
@@ -363,6 +438,10 @@ export class CarSim {
     else if (tyreBrakeG > brakeGrip) this.lockup = true;
     else if (tyreBrakeG < brakeGrip * RECOVER) this.lockup = false;
     if (this.lockup) tyreBrakeG = Math.min(tyreBrakeG, brakeGrip * LOCK_KEEP);
+    // Locked wheels are not turning, so the engine has nothing to push
+    // through: their sliding friction is all the tyres are doing. Throttle
+    // and brake together end with the brake winning, as on the car.
+    if (this.lockup) { driveG = 0; this.wheelspin = false; }
 
     // ── what slows it whatever the pedals do ────────────────────────────
     // Drag dominates at speed, engine braking at low speed, rolling
@@ -403,7 +482,7 @@ export class CarSim {
         after = 0;
       }
     }
-    after = clamp(after, -REVERSE_TOP * 1.2, 360);
+    after = clamp(after, -REVERSE_TOP * 1.2, Math.max(360, this.ratios.at(-1).top * 1.05));
     if (after !== 0) this.direction = Math.sign(after);
     this.speed = Math.abs(after);
     // Along the car, so braking while reversing still reads as slowing.
@@ -429,7 +508,7 @@ export class CarSim {
       this._queueAge += dt;
       if (!this.assists.queueDown || this._queueAge > QUEUE_TIMEOUT || this.gear <= 1) {
         this.queuedDown = 0;
-      } else if (this.speed <= RATIOS[this.gear - 2].top * OVER_REV_ALLOWED) {
+      } else if (this.speed <= this.ratios[this.gear - 2].top * OVER_REV_ALLOWED) {
         this.gear--;
         this.queuedDown--;
         this._queueAge = 0;
@@ -440,7 +519,7 @@ export class CarSim {
       }
     }
     if (inGear) {
-      const band = RATIOS[this.gear - 1];
+      const band = this.ratios[this.gear - 1];
 
       // The automatic box, when it is switched on. It stands down for a moment
       // after a paddle pull, otherwise it would immediately undo the gear the
@@ -452,9 +531,9 @@ export class CarSim {
         // as the gear runs out, so the car settles just short of its top and a
         // threshold expressed as a fraction of the band was never crossed. The
         // box stuck in second at 117 km/h with the throttle flat to the floor.
-        if (this.speed >= band.top * UPSHIFT_AT && this.gear < RATIOS.length) {
+        if (this.speed >= band.top * UPSHIFT_AT && this.gear < this.ratios.length) {
           this.gear++; this._shiftCooldown = 0.16;
-        } else if (this.gear > 1 && this.speed < RATIOS[this.gear - 2].top * DOWNSHIFT_AT) {
+        } else if (this.gear > 1 && this.speed < this.ratios[this.gear - 2].top * DOWNSHIFT_AT) {
           this.gear--; this._shiftCooldown = 0.16;
         }
       }
@@ -470,8 +549,8 @@ export class CarSim {
     // the engine freely; with the clutch slipping it sits near idle.
     let targetRpm;
     if (this.gear >= 1 && coupled) {
-      const b = RATIOS[this.gear - 1];
-      const lo = this.gear > 1 ? RATIOS[this.gear - 2].top : 0;
+      const b = this.ratios[this.gear - 1];
+      const lo = this.gear > 1 ? this.ratios[this.gear - 2].top : 0;
       const frac = clamp((this.speed - lo) / Math.max(1, b.top - lo), 0, 1);
       targetRpm = RPM_IDLE + (RPM_MAX - RPM_IDLE) * frac;
     } else if (this.gear === REVERSE && coupled) {
@@ -570,12 +649,12 @@ export class CarSim {
       return true;
     }
 
-    const next = clamp(this.gear + direction, 1, RATIOS.length);
+    const next = clamp(this.gear + direction, 1, this.ratios.length);
     if (next === this.gear) {
       this.refusal = { direction, gear: this.gear, reason: direction > 0 ? 'top' : 'bottom' };
       return false;
     }
-    if (direction < 0 && this.speed > RATIOS[next - 1].top * OVER_REV_ALLOWED) {
+    if (direction < 0 && this.speed > this.ratios[next - 1].top * OVER_REV_ALLOWED) {
       // Too fast for that gear: refused, as a real box refuses it. With the
       // aid on, remembered instead, and taken the moment the speed allows.
       const queued = this.assists.queueDown;
@@ -595,8 +674,8 @@ export class CarSim {
 
   /** The lowest forward gear that will take this speed. */
   lowestGearFor(speed) {
-    const i = RATIOS.findIndex((r) => r.top * OVER_REV_ALLOWED >= speed);
-    return i < 0 ? RATIOS.length : i + 1;
+    const i = this.ratios.findIndex((r) => r.top * OVER_REV_ALLOWED >= speed);
+    return i < 0 ? this.ratios.length : i + 1;
   }
 
   /** The N button: always allowed, as it is on the car. */
@@ -624,9 +703,21 @@ export class CarSim {
     return true;
   }
 
+  /**
+   * Sets the gearbox: a top speed for each gear, km/h at the limiter, or
+   * null for the standard one. Takes effect at once, in whatever gear the
+   * car is in. Returns what `checkRatios` made of it; a bad set changes
+   * nothing.
+   */
+  setRatios(tops) {
+    const check = checkRatios(tops ?? STANDARD_RATIOS);
+    if (check.ok) this.ratios = check.tops.map((top, i) => ({ gear: i + 1, top }));
+    return check;
+  }
+
   /** A gear's top speed, km/h, and the fastest it can be dropped into. */
   gearLimits(gear) {
-    const top = RATIOS[clamp(gear, 1, RATIOS.length) - 1].top;
+    const top = this.ratios[clamp(gear, 1, this.ratios.length) - 1].top;
     return { top, dropBelow: Math.floor(top * OVER_REV_ALLOWED) };
   }
 

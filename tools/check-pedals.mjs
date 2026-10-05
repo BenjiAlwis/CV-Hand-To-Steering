@@ -11,7 +11,7 @@
 import { footMetrics, PedalCalibrator, POSE, framingAdvice, silhouettePitch } from '../src/vision/footmath.js';
 import { PedalSource } from '../src/input/pedalsource.js';
 import { resolveAssignment } from '../src/vision/devices.js';
-import { CarSim, brakeTempFactor, NEUTRAL, REVERSE } from '../src/sim/carsim.js';
+import { CarSim, brakeTempFactor, NEUTRAL, REVERSE, STANDARD_RATIOS, checkRatios } from '../src/sim/carsim.js';
 
 let failures = 0;
 const ok = (name, cond, detail = '') => {
@@ -653,9 +653,9 @@ console.log('\nthe throttle pedal');
   for (let i = 0; i < 30; i++) stamp.update(dt, 0, { throttle: 1, brake: 0 });
   ok('full throttle in first spins the rear tyres', stamp.wheelspin === true);
   // First gear can push at four times what the rear tyres hold, so gently
-  // means gently — about a third of the pedal.
+  // means gently — about a third of the pedal, just under the limit.
   const feed = new CarSim(); feed.speed = 40; feed.gear = 1;
-  for (let i = 0; i < 30; i++) feed.update(dt, 0, { throttle: 0.3, brake: 0 });
+  for (let i = 0; i < 30; i++) feed.update(dt, 0, { throttle: 0.35, brake: 0 });
   ok('fed in gently, they grip', feed.wheelspin === false);
   ok('and the car goes faster for it', feed.accelG > stamp.accelG, `${feed.accelG.toFixed(2)} g vs ${stamp.accelG.toFixed(2)} g spinning`);
   const tall = new CarSim(); tall.speed = 220; tall.gear = 6;
@@ -670,6 +670,25 @@ console.log('\nthe throttle pedal');
   const tc = new CarSim(); tc.assists.traction = true; tc.speed = 40; tc.gear = 1;
   for (let i = 0; i < 30; i++) tc.update(dt, 0, { throttle: 1, brake: 0 });
   ok('traction control, when switched on, never lets them spin', tc.wheelspin === false);
+
+  // Full pedal is sized for top speed: standing on it at 300 km/h is the
+  // hardest stop the car makes, tyres plus drag, and it must not lock.
+  {
+    const stop = new CarSim({ gear: 8 }); stop.speed = 300; stop.direction = 1;
+    let peak = 0;
+    for (let i = 0; i < 0.15 / dt; i++) { stop.update(dt, 0, { throttle: 0, brake: 1 }); peak = Math.max(peak, -stop.accelG); }
+    ok('full brake at 300 km/h does not lock the wheels', stop.lockup === false);
+    ok('and stops at about 5 g', peak > 4.5 && peak < 5.6, `${peak.toFixed(2)} g`);
+  }
+  // Rolling out of a slow corner the clutch is long closed: the rears, not
+  // the launch, set the pace, and a flat foot in second still pulls hard —
+  // spinning a little, not sliding.
+  {
+    const exit = new CarSim({ gear: 2 }); exit.speed = 60; exit.direction = 1;
+    let peak = 0;
+    for (let i = 0; i < 0.5 / dt; i++) { exit.update(dt, 0, { throttle: 1, brake: 0 }); peak = Math.max(peak, exit.accelG); }
+    ok('a flat foot out of a second-gear corner pulls over 1.1 g', peak > 1.1, `${peak.toFixed(2)} g`);
+  }
 
   const launch = (traction) => {
     const car = new CarSim(); car.assists.gears = true; car.assists.traction = traction;
@@ -831,6 +850,47 @@ console.log('\nneutral and reverse');
   const autoR = new CarSim({ gear: REVERSE }); autoR.assists.gears = true;
   for (let i = 0; i < 60; i++) autoR.update(dt, 0, { throttle: 0.4, brake: 0 });
   ok('but leaves reverse alone', autoR.gear === REVERSE);
+}
+
+console.log('\nthe gearbox, set by the driver');
+{
+  const dt = 1 / 240;
+  ok('the standard box is the one the car starts with', new CarSim().ratios.map((r) => r.top).join() === STANDARD_RATIOS.join());
+  ok('a sound box is accepted', checkRatios([70, 110, 150, 190, 225, 260, 295, 335]).ok);
+  ok('a gear no taller than the one before is refused, and named',
+    (() => { const c = checkRatios([78, 118, 118, 196, 232, 267, 298, 330]); return !c.ok && c.gear === 3; })());
+  ok('so is one out of range', !checkRatios([10, 118, 158, 196, 232, 267, 298, 330]).ok);
+  ok('and one that is not a number', !checkRatios([78, 'x', 158, 196, 232, 267, 298, 330]).ok);
+  ok('and the wrong number of gears', !checkRatios([78, 118, 158]).ok);
+
+  // Pull in first from 40 km/h, flat out with traction control, for a moment.
+  const pull = (tops) => {
+    const c = new CarSim(); c.setRatios(tops); c.assists.traction = true;
+    c.gear = 2; c.speed = 70; c.direction = 1;
+    for (let i = 0; i < 0.3 / dt; i++) c.update(dt, 0, { throttle: 1, brake: 0 });
+    return c.accelG;
+  };
+  const shortSecond = [...STANDARD_RATIOS]; shortSecond[1] = 100;
+  const tallSecond = [...STANDARD_RATIOS]; tallSecond[1] = 140;
+  ok('a shorter gear pulls harder', pull(shortSecond) > pull(tallSecond),
+    `${pull(shortSecond).toFixed(2)} g vs ${pull(tallSecond).toFixed(2)} g`);
+
+  const held = new CarSim(); held.setRatios(shortSecond); held.assists.traction = true;
+  held.gear = 2; held.speed = 80; held.direction = 1;
+  for (let i = 0; i < 4 / dt; i++) held.update(dt, 0, { throttle: 1, brake: 0 });
+  ok('and runs out at its new top speed', Math.abs(held.speed - 100) < 3, `${held.speed.toFixed(0)} km/h`);
+  ok('which is what the gear limits report', held.gearLimits(2).top === 100);
+
+  const bad = new CarSim(); bad.setRatios(shortSecond);
+  const r = bad.setRatios([78, 50, 158, 196, 232, 267, 298, 330]);
+  ok('a bad box changes nothing', !r.ok && bad.gearLimits(2).top === 100);
+  bad.setRatios(null);
+  ok('and null puts the standard box back', bad.ratios.map((x) => x.top).join() === STANDARD_RATIOS.join());
+
+  const tall = new CarSim(); tall.setRatios([90, 135, 180, 220, 260, 300, 340, 385]);
+  tall.gear = 8; tall.speed = 370; tall.direction = 1;
+  tall.update(dt, 0, { throttle: 1, brake: 0 });
+  ok('a tall top gear is not held back by a fixed speed cap', tall.speed > 360);
 }
 
 console.log(failures === 0 ? '\nall pedal checks passed\n' : `\n${failures} pedal check(s) failed\n`);

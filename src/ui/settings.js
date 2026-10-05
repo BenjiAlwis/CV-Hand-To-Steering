@@ -50,6 +50,8 @@ export const DEFAULTS = {
   traction: false,
   /** Never lets the tyres lock under braking. Not allowed in F1. */
   abs: false,
+  /** The gearbox: each gear's top speed in km/h, or null for the standard one. */
+  gearRatios: null,
   /** Graphics quality: low, medium, high or ultra. */
   graphics: 'high',
   /**

@@ -24,6 +24,7 @@ import { listCameras, loadAssignment, saveAssignment, resolveAssignment } from '
 import { Settings } from './ui/settings.js';
 import { PanelChrome } from './ui/panelchrome.js';
 import { SettingsPanel } from './ui/settingspanel.js';
+import { GearboxSettings } from './ui/gearbox.js';
 import { HandTrackingSource } from './input/handsource.js';
 import { Shifter, ShiftGate } from './input/shifter.js';
 import { WheelSource, HOLD_FOR_REVERSE } from './input/wheelsource.js';
@@ -42,6 +43,9 @@ import { Hud } from './ui/hud.js';
 if (new URLSearchParams(location.search).get('shell') === 'desktop') {
   document.documentElement.classList.add('desktop');
 }
+
+/** The car simulation's largest step, in seconds; a frame is split into as many as it needs. */
+const SIM_STEP = 1 / 120;
 
 const boot = document.getElementById('boot');
 const bootMsg = boot.querySelector('.boot-msg');
@@ -123,6 +127,9 @@ async function main() {
   const sim = new CarSim({ gear: NEUTRAL });
   const hud = new Hud();
   const settings = new Settings();
+  // The driver's own gearbox, if they have set one; a saved set that no
+  // longer makes sense is ignored and the standard box used.
+  sim.setRatios(settings.get('gearRatios'));
   // Driving aids, all off at launch unless switched on in settings.
   const syncAssists = () => Object.assign(sim.assists, {
     gears: settings.get('autoGears'),
@@ -349,6 +356,7 @@ async function main() {
     },
   });
 
+  const gearbox = new GearboxSettings(settings);
   const settingsPanel = new SettingsPanel({
     settings,
     chrome,
@@ -367,6 +375,7 @@ async function main() {
     if (key === 'wheel') wheelSource.enabled = value;
     if (key === 'wheelForce') wheelSource.force.enabled = value;
     if (key === 'wheelStrength') wheelSource.force.strength = value;
+    if (key === 'gearRatios') sim.setRatios(gearbox.tops);
     if (key === 'rimGuard') {
       wheelSource.rimGuard = value;
       toast.show(value ? 'Wheel-fitted check on: the motor only moves with a wheel on the base'
@@ -445,7 +454,7 @@ async function main() {
     toggleSettings: (force) => settingsPanel.toggle(force),
   });
 
-  app.start((dt, elapsed) => {
+  app.start((dt, elapsed, realDt = dt) => {
     app.updateCamera(dt);
     app.project(wheelOrigin, pivot);
 
@@ -508,7 +517,13 @@ async function main() {
     const pedalDriver = realPedals ? 'pedals' : pedalInput ? 'feet' : aids ? 'aids' : 'none';
     pedalInput = realPedals ?? pedalInput;
     if (chrome.isVisible('pedalset')) pedalSetPanel.update(pedalDriver);
-    const telemetry = sim.update(dt, controller.normalised, pedalInput);
+    // The car runs on the real clock, in small steps. Stepped with the
+    // render's capped frame time instead, every frame slower than 20 fps
+    // ran the car in slow motion — at 12 fps it accelerated, braked and
+    // lapped at 60% of real speed.
+    const steps = Math.max(1, Math.ceil(realDt / SIM_STEP));
+    let telemetry;
+    for (let i = 0; i < steps; i++) telemetry = sim.update(realDt / steps, controller.normalised, pedalInput);
     if (sim.gear === NEUTRAL && sim.speed < 1 && (pedalInput?.throttle ?? 0) > 0.3
         && performance.now() - neutralHintAt > 8000) {
       neutralHintAt = performance.now();

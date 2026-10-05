@@ -180,10 +180,6 @@
         <div class="team-sub" id="teamSub"></div>
       </div>
 
-    </div>
-
-
-    <div class="hud-corner br">
       <div class="panel camera" id="camera" data-panel="camera">
         <div class="panel-title">HAND TRACKING</div>
         <canvas class="cam-canvas" id="cameraCanvas" width="320" height="180"></canvas>
@@ -240,7 +236,9 @@
           <button id="pedalZero" type="button">Zero pedals</button>
         </div>
       </div>
+
     </div>
+
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -346,6 +344,16 @@
               <button class="set-button" id="wheelCancel" type="button" hidden>Cancel</button>
               <button class="set-button" id="wheelCentre" type="button">Calibrate</button>
               <button class="set-button" id="wheelReset" type="button">Reset</button>
+            </div>
+          </div>
+          <div class="gear-ratios" id="gearRatios">
+            <div class="set-group-name">GEAR RATIOS</div>
+            <p class="set-note gear-note">Each gear's top speed at the rev limit, in km/h. A shorter gear (lower number) pulls harder but runs out sooner; a taller one reaches more speed with less push. Each has to be taller than the one before.</p>
+            <div class="gear-grid" id="gearGrid"></div>
+            <p class="set-note gear-error" id="gearError" hidden></p>
+            <div class="gear-actions">
+              <span class="gear-state" id="gearState">standard</span>
+              <button class="set-button" id="gearReset" type="button">Reset to standard</button>
             </div>
           </div>
         </div>

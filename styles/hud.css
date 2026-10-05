@@ -272,6 +272,8 @@ kbd{
 
 @media (max-width:820px){
   .hud-corner.bl,.hud-corner.br{display:none}
+  /* The tracking panels, now under WHEEL, go on a narrow screen as before. */
+  .hud-corner.tr > .panel.camera{display:none}
   .panel{min-width:180px}
   .angle-readout{font-size:30px}
 }
@@ -476,3 +478,32 @@ kbd{
   scrollbar-width:thin;scrollbar-color:rgba(150,170,200,.25) transparent;padding-right:2px;
 }
 .desktop .hud-corner.tl > .hud-col:first-child{max-height:calc(100vh - 70px)}
+
+/* Gear ratios, in the settings sheet */
+.gear-ratios{margin-top:12px}
+.gear-note{margin:2px 0 8px}
+.gear-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.gear-grid label{display:grid;grid-template-columns:14px 1fr;align-items:center;gap:4px;font-size:10px;color:var(--dim)}
+.gear-grid input{width:100%;min-width:0;font:inherit;font-size:10.5px;color:#c8d2de;background:rgba(255,255,255,.05);
+  border:1px solid var(--line);border-radius:6px;padding:5px 4px;text-align:right}
+.gear-grid input.changed{color:var(--ink);border-color:rgba(255,255,255,.28)}
+.gear-grid input.bad{color:var(--warn);border-color:var(--warn)}
+.gear-error{color:var(--warn);margin:6px 0 0}
+.gear-actions{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.gear-actions .set-button{margin-top:0}
+.gear-state{font-size:9.5px;letter-spacing:.08em;color:var(--dim)}
+.gear-state.custom{color:var(--warn)}
+
+/* The right column: rig, wheel, then hand and pedal tracking directly below,
+   spaced by the column so a hidden panel leaves no gap. Like the left column
+   it scrolls rather than running off the bottom of a short window. */
+.hud-corner.tr{
+  display:flex;flex-direction:column;gap:10px;align-items:stretch;max-width:330px;box-sizing:border-box;
+  max-height:100vh;overflow-y:auto;overflow-x:hidden;pointer-events:auto;
+  scrollbar-width:thin;scrollbar-color:rgba(150,170,200,.25) transparent;
+}
+.hud-corner.tr > .panel{margin-top:0}
+/* In the column the tracking panels take its width, so a scrollbar can never
+   push their right edge out of view. */
+.hud-corner.tr > .panel.camera{min-width:0}
+.desktop .hud-corner.tr{max-height:calc(100vh - 34px)}
