@@ -30,7 +30,7 @@ import { SteeringSource } from './source.js';
 import {
   chooseDevice, defaultMapping, displayName, isLikelyWheel, loadWheels, saveWheels,
   steerDegrees, steerToAxis, buttonPressed, MappingWizard, LeadTracker, WIZARD_STEPS,
-  SweepCalibration, RotationMeasurement, MotionProfile, ASSUMED_ROTATION,
+  SweepCalibration, RotationMeasurement, MotionProfile, ASSUMED_ROTATION, buttonValue,
 } from './wheels.js';
 import { OneEuroFilter } from '../vision/handmath.js';
 
@@ -66,6 +66,15 @@ const SWEEP_MIN_FORCE = 0.3;
 const SWEEP_MAX_FORCE = 0.5;
 /** How long the rim must sit within a degree of straight before Centre calls it done. */
 const CENTRE_SETTLE_MS = 150;
+/**
+ * Faster than this, in degrees of rim a second, while the motor is moving
+ * the rim with nobody holding it, and the rotor is not being driven — it is
+ * running away. Calibration and Centre pace the rim at 300°/s; a bare rotor
+ * with nothing fitted to it whips far past that.
+ */
+const RUNAWAY_DPS = 900;
+/** How long a request waits for a wheel to be shown fitted before giving up. */
+const RIM_WAIT_MS = 30000;
 /**
  * How hard the rim may be swung when it follows the rig, degrees per second²:
  * enough to keep up with a quick hand on the mouse, never a snap.
@@ -133,6 +142,24 @@ export class WheelSource extends SteeringSource {
 
     /** Force feedback: whether the rig may turn the rim, and how hard. */
     this.force = { enabled: true, strength: 0.3 };
+    /**
+     * Rim safety. The motor only turns a base known to have a wheel fitted:
+     * a rotor with nothing on it spins up fast enough to damage the base,
+     * a quick release or a finger. Known by any one of —
+     *   'serial'  the rim answered the base (Moza rims that talk);
+     *   'button'  a button was pressed on it, which only a rim has;
+     *   'user'    the driver said so.
+     * Forgotten whenever the device reconnects. The guard can be turned off
+     * in the settings, at the driver's own risk; it is back on every launch.
+     */
+    this.rimGuard = true;
+    this.rim = { state: 'unknown', via: null };
+    /** Centre or Calibrate waiting on a wheel to be shown fitted, or null. */
+    this.rimCheck = null;
+    this._rimSeen = 0;
+    this._rimButtons = null;
+    this._swallow = false;
+    this._runaway = { last: null, at: 0, count: 0, until: 0 };
     this.lead = new LeadTracker();
     /** A person is turning the rim right now. */
     this.leading = false;
@@ -195,6 +222,7 @@ export class WheelSource extends SteeringSource {
     if (!this.connected) return 'none';
     if (!this.enabled) return 'off';
     if (this.wizard) return 'mapping';
+    if (this.rimCheck) return 'checking';
     if (this.centring || this.awaitingBase) return 'centring';
     if (this.returning) return 'returning';
     if (this.measuring) return 'measuring';
@@ -231,8 +259,11 @@ export class WheelSource extends SteeringSource {
 
     if (!this.mapping) return;
 
+    const before = this.degrees;
     this.degrees = steerDegrees(this.mapping, pads) ?? 0;
     const now = this.now();
+    this._watchRim(pads, now);
+    this._watchRunaway(before, now);
     // Take what the base says first, so a calibration waiting on it can go
     // on in the same frame.
     this._adoptBaseRotation();
@@ -259,13 +290,14 @@ export class WheelSource extends SteeringSource {
     // pulling one is the answer to a question rather than a gear change.
     for (const [key, direction] of [['up', 1], ['down', -1]]) {
       const down = buttonPressed(this.mapping[key], pads);
-      if (down && !this._held[key] && this.enabled && !mapping) this.onShift(direction);
+      // Not while a press is being taken as proof that a wheel is fitted.
+      if (down && !this._held[key] && this.enabled && !mapping && !this.rimCheck && !this._swallow) this.onShift(direction);
       this._held[key] = down;
     }
 
     // Gear buttons, as on an F1 wheel: neutral on a press, reverse on a
     // hold of the same button — or on a reverse button of its own.
-    const live = this.enabled && !mapping;
+    const live = this.enabled && !mapping && !this.rimCheck && !this._swallow;
     const nDown = buttonPressed(this.mapping.neutral, pads);
     if (nDown && !this._held.neutral) this._neutralSince = now;
     if (nDown && this._neutralSince !== null && now - this._neutralSince >= HOLD_FOR_REVERSE) {
@@ -278,6 +310,8 @@ export class WheelSource extends SteeringSource {
     const rDown = buttonPressed(this.mapping.reverse, pads);
     if (rDown && !this._held.reverse && live) this.onGear('reverse');
     this._held.reverse = rDown;
+    // The press that showed a wheel is fitted is spent once every button is up.
+    if (this._swallow && !(this._rimButtons ?? []).some(Boolean)) this._swallow = false;
   }
 
   /**
@@ -286,6 +320,13 @@ export class WheelSource extends SteeringSource {
    * other than this wheel is steering.
    */
   drive(degrees, dt = 1 / 60) {
+    // No wheel known to be fitted: the motor does nothing at all. Neither
+    // does it for a moment after the rotor ran away.
+    if (this.drivable && (!this.motorAllowed || this.now() < this._runaway.until)) {
+      if (this.driving !== null || this.returning || this.centring) this.native?.release();
+      this.driving = null;
+      return;
+    }
     // Centre takes the motor over: back to 0°, whatever the rig is asking for.
     if (this.returning) {
       const target = this.mapping.steer.centre ?? 0;
@@ -434,6 +475,9 @@ export class WheelSource extends SteeringSource {
    */
   calibrateCentre() {
     if (!this.connected || !this.mapping || this.mapping.steer?.kind !== 'axis') return null;
+    // The sweep drives the rim lock to lock: only with a wheel on the base.
+    if (this.drivable && !this.motorAllowed) return this._askForRim('calibrate');
+    if (this.drivable) this._recheckRim();
     if (this.returning) this.cancelReturn();
     this.wizard = null;
     this.centreResult = null;
@@ -483,6 +527,8 @@ export class WheelSource extends SteeringSource {
       this.onCentred();
       return true;
     }
+    if (!this.motorAllowed) return this._askForRim('centre');
+    this._recheckRim();
     this.drive(null);
     this._centreAim = raw ?? 0;
     this._sweep.reset(this._centreAim);
@@ -647,6 +693,119 @@ export class WheelSource extends SteeringSource {
     this._save();
   }
 
+  /* ── rim safety ───────────────────────────────────────────────── */
+
+  /** Whether the motor may turn this base at all. */
+  get motorAllowed() {
+    return !this.rimGuard || this.rim.state === 'present';
+  }
+
+  /** Holds Centre or Calibrate until a wheel is shown to be fitted. */
+  _askForRim(action) {
+    this.drive(null);
+    this.rimCheck = { action, at: this.now() };
+    this.centreResult = null;
+    if (this.isMoza) this.native?.probeRim?.();
+    return action === 'centre' ? true : null;
+  }
+
+  /** The driver says a wheel is fitted. */
+  confirmRim() { this._rimFound('user'); }
+
+  cancelRimCheck() {
+    if (!this.rimCheck) return;
+    const what = this.rimCheck.action === 'centre' ? 'Centring' : 'Calibration';
+    this.rimCheck = null;
+    this.centreResult = { ok: false, text: `${what} cancelled — the motor was not moved.`, at: this.now() };
+  }
+
+  /** Asks again before moving, where the rim can answer for itself. */
+  _recheckRim() {
+    if (this.rimGuard && this.rim.via === 'serial') this.native?.probeRim?.();
+  }
+
+  _rimFound(via) {
+    if (this.rim.state !== 'present' || this.rim.via === 'user') this.rim = { state: 'present', via };
+    const pending = this.rimCheck;
+    if (!pending) return;
+    this.rimCheck = null;
+    if (pending.action === 'centre') this.centre();
+    else this.calibrateCentre();
+  }
+
+  /** The rim stopped answering: stop everything the motor was doing. */
+  _rimLost(text) {
+    this.rim = { state: 'absent', via: null };
+    if (this.returning) this._endReturn(false, text);
+    else if (this.centring) this._endCentring(false, text);
+    this.drive(null);
+    this.native?.release();
+    this.centreResult = { ok: false, text, at: this.now() };
+  }
+
+  _watchRim(pads, now) {
+    // A button going down on the steering device: only a rim has buttons.
+    // Edges only, so a bit stuck on from the start proves nothing.
+    const pad = pads.find((p) => p.id === this.mapping.steer?.pad);
+    if (pad?.buttons) {
+      const down = pad.buttons.map((b) => buttonValue(b) >= 0.5);
+      if (this._rimButtons && down.some((d, i) => d && !this._rimButtons[i])) {
+        // That press answered the question; it must not also shift or
+        // select a gear, on the way down or on the way up.
+        if (this.rimCheck) this._swallow = true;
+        this._rimFound('button');
+      }
+      this._rimButtons = down;
+    }
+    // The base's own answer, where it can give one.
+    const r = this.native?.rim;
+    if (r && r.at !== this._rimSeen) {
+      this._rimSeen = r.at;
+      if (r.present) this._rimFound('serial');
+      else if (r.present === false && this.rim.via === 'serial') {
+        this._rimLost('The wheel stopped answering the base — it looks to have been taken off. The motor has been released.');
+      }
+    }
+    if (this.rimCheck && now - this.rimCheck.at > RIM_WAIT_MS) {
+      this.rimCheck = null;
+      this.centreResult = { ok: false, text: 'No wheel was shown to be fitted, so the motor was not moved.', at: now };
+    }
+  }
+
+  /**
+   * The backstop: the rim turning far faster than the motor is pacing it,
+   * with nobody holding it, is a rotor with nothing on it. Let go at once.
+   */
+  _watchRunaway(before, now) {
+    const ra = this._runaway;
+    const dt = (now - ra.at) / 1000;
+    const moving = this.drivable
+      && !!(this.returning || this.centring?.active || (this.driving !== null && !this.leading));
+    if (moving && ra.last !== null && dt > 0 && dt < 0.25) {
+      const dps = Math.abs(this.degrees - before) / dt;
+      ra.count = dps > RUNAWAY_DPS ? ra.count + 1 : 0;
+      if (ra.count >= 2) {
+        ra.count = 0;
+        ra.until = now + 2000;
+        // Centre and Calibrate run hands off: a runaway there means nothing
+        // is on the rotor, so a wheel has to be shown again before the next.
+        const handsOff = !!(this.returning || this.centring);
+        if (handsOff) this.rim = { state: 'unknown', via: null };
+        if (this.returning) this._endReturn(false, '');
+        if (this.centring) this._endCentring(false, '');
+        this.drive(null);
+        this.native?.release();
+        this.centreResult = { ok: false, at: now, text: handsOff
+          ? 'The rotor spun far faster than it was being driven — is a wheel fitted? The motor has been released.'
+          : 'The rim spun faster than it was being turned, so the motor let go.' };
+      }
+    } else {
+      ra.count = 0;
+    }
+    ra.last = this.degrees;
+    ra.at = now;
+  }
+
   _save() {
     if (!this.deviceId) return;
     this.store.maps[this.deviceId] = this.mapping;
@@ -657,6 +816,11 @@ export class WheelSource extends SteeringSource {
     const was = this.deviceId;
     this.deviceId = id;
     this.wizard = null;
+    // A device that has come (back) may have had its wheel changed or taken
+    // off in between: nothing is known about it until it is shown again.
+    this.rim = { state: 'unknown', via: null };
+    this.rimCheck = null;
+    this._rimButtons = null;
     this.centring = null;
     this.measuring = null;
     this.returning = null;

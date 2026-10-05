@@ -10,6 +10,16 @@
  * a choice is not available and why, and it explains how to make a phone
  * appear rather than leaving an empty list to be puzzled over.
  */
+/** Said before the rim guard is turned off, in full, every time. */
+export const RIM_GUARD_WARNING = [
+  'Turn off the wheel-fitted check?',
+  '',
+  'With it off, Centre, Calibrate and turning the rim to match the rig will drive the motor even when no wheel is on the base.',
+  'A wheelbase with nothing fitted can spin its bare rotor fast and hard enough to damage the base, its quick release and anything attached to it — and to hurt fingers or anything near it.',
+  '',
+  'You turn this off entirely at your own risk and expense. It turns itself back on the next time the rig starts.',
+].join('\n');
+
 export class SettingsPanel {
   /**
    * @param {object} o
@@ -55,6 +65,21 @@ export class SettingsPanel {
       });
     }
     this.el.rescan.addEventListener('click', () => this.rescan());
+
+    // The rim guard comes off only after a plain warning, and only for this
+    // session — see `rimGuard` in the settings.
+    const guard = document.getElementById('setRimGuard');
+    guard.checked = settings.get('rimGuard');
+    guard.addEventListener('change', () => {
+      if (guard.checked) { settings.set('rimGuard', true); return; }
+      const sure = window.confirm(RIM_GUARD_WARNING);
+      if (sure) settings.set('rimGuard', false);
+      else guard.checked = true;
+    });
+    settings.onChange((key, value) => { if (key === 'rimGuard') guard.checked = value; });
+    const graphics = document.getElementById('setGraphics');
+    graphics.value = settings.get('graphics');
+    graphics.addEventListener('change', () => settings.set('graphics', graphics.value));
     this.el.close.addEventListener('click', () => this.toggle(false));
 
     this._buildPanelList();

@@ -8,7 +8,19 @@
  * separating a plausible render from a flat one.
  */
 import * as THREE from 'three';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { concrete, normalMapFromHeight, colorTexture, dataTexture } from '../textures/procedural.js';
+
+/**
+ * A real photographic studio for the reflections: Studio Small 08 by Sergej
+ * Majboroda, from Poly Haven, CC0. Its softboxes are what a lacquered carbon
+ * wheel is photographed under, and what makes the clearcoat read as glossy.
+ * It is the darker of Poly Haven's small studios: a white-walled one put a
+ * milky film over the whole face, where carbon should stay black between
+ * its highlights. Bundled, so the app still starts with no network.
+ */
+const STUDIO_HDR = '/assets/env/studio_small_08_1k.hdr';
 
 const COVE_VERT = /* glsl */`
   varying vec3 vWorld;
@@ -48,8 +60,12 @@ export class Environment {
     this._buildStand();
     this._buildDust();
 
-    scene.environment = this._bakeIBL(renderer);
+    // The baked rig is the fallback until the studio has loaded, and stays if
+    // it cannot be.
+    this._baked = this._bakeIBL(renderer);
+    scene.environment = this._baked;
     scene.environmentIntensity = 1.0;
+    this._loadStudio(renderer);
     scene.fog = new THREE.FogExp2(0x070a0e, 0.30);
   }
 
@@ -174,9 +190,12 @@ export class Environment {
     key.position.set(-1.25, 2.35, 1.85);
     key.target.position.set(0, 0, 0);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.near = 0.6;
-    key.shadow.camera.far = 8;
+    // A sharp shadow map on a tight frustum: the wheel is all that matters to
+    // it, and spreading 4096 texels over the whole bay would waste them.
+    key.shadow.mapSize.set(4096, 4096);
+    key.shadow.camera.near = 1.6;
+    key.shadow.camera.far = 4.6;
+    key.angle = Math.PI / 11;
     key.shadow.bias = -0.00016;
     key.shadow.normalBias = 0.012;
     key.shadow.radius = 3;
@@ -191,6 +210,19 @@ export class Environment {
     const rim = new THREE.DirectionalLight(0x6fb6e8, 2.3);
     rim.position.set(0.8, 0.7, -2.4);
     this.scene.add(rim);
+
+    // Softboxes: two long area lights above and in front, as a product
+    // photographer would hang them. They lay long, even highlights along the
+    // lacquered carbon that a spotlight's single hot point cannot.
+    RectAreaLightUniformsLib.init();
+    const softbox = new THREE.RectAreaLight(0xf4f7ff, 5.5, 1.4, 0.5);
+    softbox.position.set(0, 1.25, 1.35);
+    softbox.lookAt(0, 0, 0);
+    const strip = new THREE.RectAreaLight(0xcfe0ff, 3.2, 0.25, 1.6);
+    strip.position.set(-1.35, 0.45, 0.9);
+    strip.lookAt(0, 0, 0);
+    this.scene.add(softbox, strip);
+    this.softboxes = [softbox, strip];
 
     const under = new THREE.PointLight(0x2b4460, 2.2, 4, 2);
     under.position.set(0, -0.35, 0.7);
@@ -283,6 +315,44 @@ export class Environment {
     this.dust.frustumCulled = false;
     this.group.add(this.dust);
     this._dustBase = pos.slice();
+  }
+
+  /**
+   * Graphics quality for the bay: which lighting the reflections come from,
+   * whether the softboxes are lit, and how sharp the key light's shadow is.
+   */
+  setQuality(level) {
+    this.quality = level;
+    const low = level === 'low';
+    this.scene.environment = !low && this._studio ? this._studio : this._baked;
+    this.scene.environmentIntensity = !low && this._studio ? 0.45 : 1.0;
+    for (const l of this.softboxes ?? []) l.visible = !low;
+    const size = low ? 1024 : level === 'medium' ? 2048 : 4096;
+    if (this.key.shadow.mapSize.x !== size) {
+      this.key.shadow.mapSize.set(size, size);
+      this.key.shadow.map?.dispose();
+      this.key.shadow.map = null;
+    }
+  }
+
+  /* ─────────────────────────── studio HDR ───────────────────────────── */
+
+  /** Swaps the reflections over to the photographed studio once it has loaded. */
+  _loadStudio(renderer) {
+    new RGBELoader().load(STUDIO_HDR, (hdr) => {
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      this._studio = pmrem.fromEquirectangular(hdr).texture;
+      pmrem.dispose();
+      hdr.dispose();
+      // Turned so the studio's main softbox sits above and in front of the
+      // driver, where the rig's own lights are; dimmed to the bay's mood.
+      this.scene.environmentRotation.set(0, Math.PI * 0.85, 0);
+      if (this.quality !== 'low') {
+        this.scene.environment = this._studio;
+        this.scene.environmentIntensity = 0.45;
+      }
+    }, undefined, () => { /* keep the baked rig */ });
   }
 
   /* ──────────────────────────── baked IBL ───────────────────────────── */

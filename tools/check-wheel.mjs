@@ -477,6 +477,11 @@ console.log('\nthe two-way link');
   const src = new WheelSource({ native, now: () => now });
   src.poll();
   ok('a force-feedback wheel can be driven', src.drivable);
+  // Nothing has shown a wheel is fitted yet: the motor stays still.
+  src.drive(30, 1 / 60);
+  ok('with no wheel shown to be fitted, driving leaves the motor alone',
+    !sent.some((x) => typeof x === 'object') && src.driving === null);
+  src.confirmRim();
   ok('and starts at the bottom of the order, so anything else steering wins', src.priority === 2);
 
   src.drive(30, 1 / 60);
@@ -671,6 +676,7 @@ console.log('\nfinding straight ahead, and both ends');
     let centred = 0;
     const src = new WheelSource({ native, now: () => now, onCentred: () => centred++ });
     src.poll();
+    src.confirmRim();
     if (known) src.setRotation(rotation);
     const step = (holdAt = null) => {
       now += 16;
@@ -1017,6 +1023,147 @@ console.log('\nhow far this wheel really turns');
   ok('typing a rotation in counts as known too', src.rotation === 450 && src.rotationKnown);
   src.setRotation(20);
   ok('but nonsense is ignored', src.rotation === 450);
+}
+
+console.log('\nrim safety: the motor never turns a base with no wheel on it');
+{
+  const MOZA = 'Gudsen R3 Racing Wheel and Pedals (Vendor: 346e Product: 0005)';
+  const make = ({ guard = true } = {}) => {
+    const pad = wheelPad(MOZA);
+    const sent = [];
+    let probes = 0;
+    let now = 0;
+    const native = {
+      pads: [pad], moza: { state: 'absent', values: {} }, canDrive: () => true, rim: null,
+      follow: (id, centre, strength) => sent.push({ centre, strength }),
+      release: () => sent.push('release'),
+      probeRim: () => { probes++; },
+    };
+    const shifts = [];
+    const src = new WheelSource({ native, now: () => now, onShift: (d) => shifts.push(d) });
+    src.rimGuard = guard;
+    src.poll();
+    src.setRotation(472);
+    const tick = (ms = 16) => { now += ms; src.poll(); src.drive(null, ms / 1000); };
+    const driven = () => sent.some((x) => typeof x === 'object');
+    return { pad, sent, src, native, tick, driven, shifts, probes: () => probes, at: () => now, setNow: (t) => { now = t; } };
+  };
+
+  {
+    const { src, tick, driven, probes } = make();
+    ok('nothing is known about a rim when the base appears', src.rim.state === 'unknown' && !src.motorAllowed);
+    {
+      src.centre();
+      for (let i = 0; i < 10; i++) tick();
+      ok('Centre with no wheel shown fitted asks instead of moving', !!src.rimCheck && src.mode === 'checking' && !src.returning);
+      ok('and the motor is never driven', !driven());
+      ok('a Moza base is asked, read-only, whether a rim is on it', probes() === 1);
+    }
+  }
+
+  {
+    const { pad, src, tick, driven } = make();
+    src.calibrateCentre();
+    tick();
+    ok('Calibrate is held the same way', !!src.rimCheck && !src.centring && !driven());
+    press(pad, 3);
+    tick();
+    ok('pressing any button on the wheel shows it is fitted', src.rim.state === 'present' && src.rim.via === 'button');
+    ok('and the calibration then goes ahead by itself', !src.rimCheck && !!(src.centring || src.awaitingBase));
+    for (let i = 0; i < 5; i++) tick();
+    ok('with the motor now driving', driven());
+  }
+
+  {
+    const { pad, src, tick, shifts } = make();
+    src.mapping = { ...src.mapping, up: { pad: pad.id, kind: 'button', index: 5 } };
+    src.centre();
+    tick();
+    press(pad, 5);
+    tick();
+    ok('the paddle pulled to show the wheel is fitted does not also change gear', shifts.length === 0);
+  }
+
+  {
+    const { src, tick, driven } = make();
+    src.centre();
+    tick();
+    src.confirmRim();
+    tick();
+    ok('saying a wheel is fitted lets Centre go ahead', !!src.returning && src.rim.via === 'user');
+    for (let i = 0; i < 5; i++) tick();
+    ok('and drive the motor', driven());
+  }
+
+  {
+    const { src, tick } = make();
+    src.centre();
+    tick();
+    src.cancelRimCheck();
+    ok('cancelling leaves the motor alone and says so', !src.rimCheck && /not moved/.test(src.centreResult.text));
+  }
+
+  {
+    const { src, tick, setNow, at } = make();
+    src.centre();
+    tick();
+    setNow(at() + 31000);
+    tick();
+    ok('a check nobody answers gives up after half a minute', !src.rimCheck && /not moved/.test(src.centreResult.text));
+  }
+
+  {
+    const { src, native, tick, sent } = make();
+    native.rim = { present: true, at: 1 };
+    tick();
+    ok('a rim that answers the base is known to be fitted', src.rim.state === 'present' && src.rim.via === 'serial');
+    src.centre();
+    for (let i = 0; i < 3; i++) tick();
+    ok('so Centre goes straight ahead', !!src.returning);
+    native.rim = { present: false, at: 2 };
+    tick();
+    ok('if it stops answering mid-move, the move stops', !src.returning && src.rim.state === 'absent');
+    ok('and the motor is released', sent.at(-1) === 'release' || sent.includes('release'));
+    ok('saying why', /taken off/.test(src.centreResult.text));
+  }
+
+  {
+    const { pad, src, tick, sent } = make();
+    src.confirmRim();
+    src.centre();
+    for (let i = 0; i < 3; i++) tick();
+    // A bare rotor whipping round: 60° of rim every frame.
+    for (let i = 0; i < 4; i++) { pad.axes[0] += 60 / 236; tick(); }
+    ok('a rotor spinning far faster than it is driven is released at once', !src.returning && sent.includes('release'));
+    ok('and has to be shown a wheel again before the next move', src.rim.state === 'unknown' && !src.motorAllowed);
+    ok('saying what happened', /far faster/.test(src.centreResult.text));
+  }
+
+  {
+    const { src, tick, driven } = make();
+    src.drive(30, 1 / 60);
+    tick();
+    ok('turning the rim to match the rig waits for a wheel too', src.driving === null && !driven());
+  }
+
+  {
+    const { src, tick, driven } = make({ guard: false });
+    src.centre();
+    for (let i = 0; i < 3; i++) tick();
+    ok('with the check turned off, Centre drives without asking', !src.rimCheck && !!src.returning && driven());
+  }
+
+  {
+    const { pad, src, tick } = make();
+    press(pad, 2);
+    tick();
+    ok('a wheel shown fitted is remembered', src.motorAllowed);
+    src.native.pads = [];
+    tick();
+    src.native.pads = [pad];
+    tick();
+    ok('until the base reconnects, when it must be shown again', src.rim.state === 'unknown');
+  }
 }
 
 console.log(failures === 0 ? '\nall wheel checks passed\n' : `\n${failures} wheel check(s) failed\n`);

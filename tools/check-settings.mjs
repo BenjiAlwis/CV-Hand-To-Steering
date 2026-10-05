@@ -117,6 +117,19 @@ console.log('\ndriving aids');
   ok('while ordinary settings are still remembered', b.get('flaps') === false);
 }
 
+console.log('\nthe wheel-fitted check');
+{
+  store = {};
+  const a = new Settings();
+  ok('starts on', a.get('rimGuard') === true);
+  a.set('rimGuard', false);
+  ok('can be turned off for this session', a.get('rimGuard') === false);
+  ok('but is on again at the next launch', new Settings().get('rimGuard') === true);
+  store = { 'wheelhouse.settings': JSON.stringify({ rimGuard: false }) };
+  ok('even if an old record says off', new Settings().get('rimGuard') === true);
+  store = {};
+}
+
 console.log('\nwhen storage will not have it');
 {
   store = {};

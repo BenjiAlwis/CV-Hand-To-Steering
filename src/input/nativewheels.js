@@ -28,6 +28,8 @@ export class NativeWheels {
     this.devices = new Map();
     /** What the helper knows about a Moza base on the serial port. */
     this.moza = { state: 'absent', holder: null, values: {} };
+    /** The last answer to "is a wheel fitted to the base?", and when it came. */
+    this.rim = null;
     /** Force feedback: which device is being driven, or why it cannot be. */
     this.ff = { state: 'released', id: null, message: null };
     this.ready = false;
@@ -65,6 +67,8 @@ export class NativeWheels {
   }
 
   mozaRead(names) { this.bridge.send({ op: 'moza-read', names }); }
+  /** Asks a Moza base, read-only, whether a wheel is fitted to it. */
+  probeRim() { this.bridge.send({ op: 'rim-probe' }); }
   mozaWrite(name, value) { this.bridge.send({ op: 'moza-write', name, value }); }
 
   _receive(message) {
@@ -98,6 +102,10 @@ export class NativeWheels {
       }
       case 'moza':
         this.moza = { state: message.state, holder: message.holder, values: { ...message.values } };
+        this.onChange();
+        break;
+      case 'rim':
+        this.rim = { present: message.present, at: performance.now() };
         this.onChange();
         break;
       case 'ff':

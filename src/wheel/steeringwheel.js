@@ -9,10 +9,16 @@
  * — so the input layer never has to know how any of this is built.
  */
 import * as THREE from 'three';
-import { planarUV, buttonCapGeometry, rotaryBodyGeometry, plateGeometry } from './geometry.js';
+import {
+  capLegendTexture, rollerTexture, knobShape, stackedLabelTexture, emblemTexture, tabTextTexture,
+} from './decals.js';
+import { planarUV, buttonCapGeometry, rotaryBodyGeometry, plateGeometry, roundedPolyShape } from './geometry.js';
 import { Display } from './display.js';
 import { RevLights } from './revlights.js';
 import { CAP_COLOURS } from './caps.js';
+
+/** The rounded edge on a display module's glass, which stands proud of its depth. */
+const MODULE_BEVEL = 0.0008;
 
 export class SteeringWheel {
   /**
@@ -31,7 +37,10 @@ export class SteeringWheel {
     this._disposables = [];
     this._buildShell();
     this._buildGrips();
+    this._buildPods();
     this._buildSwitchgear();
+    this._buildFittings();
+    this._buildRollers();
     this._buildDisplay();
     this._buildRevLights();
     this._buildPaddles();
@@ -64,7 +73,9 @@ export class SteeringWheel {
       bevelThickness: shell.bevel,
       bevelSize: shell.bevel,
       bevelOffset: 0,
-      bevelSegments: 3,
+      // Enough steps round the moulded edge that it reads as a curve in a
+      // highlight, not as three facets.
+      bevelSegments: 7,
       curveSegments: 1,
     });
 
@@ -83,18 +94,38 @@ export class SteeringWheel {
     boltGeo.rotateX(Math.PI / 2);
     this._disposables.push(boltGeo);
     const inset = 0.010;
-    for (const [x, y] of [
-      [-shell.topCornerX * 0.28, shell.topY - inset],
-      [shell.topCornerX * 0.28, shell.topY - inset],
-      [-shell.shoulderX + inset * 1.5, shell.shoulderY],
-      [shell.shoulderX - inset * 1.5, shell.shoulderY],
-      [-shell.legOuterX + inset, shell.legBottomY + inset * 1.6],
-      [shell.legOuterX - inset, shell.legBottomY + inset * 1.6],
-    ]) {
+    // A shell given as measured stations says where its bolts are; the
+    // others are placed from their outline's named points.
+    const boltSpots = shell.bolts
+      ? shell.bolts.flatMap(([x, y]) => [[-x, y], [x, y]])
+      : [
+        [-shell.topCornerX * 0.28, shell.topY - inset],
+        [shell.topCornerX * 0.28, shell.topY - inset],
+        [-shell.shoulderX + inset * 1.5, shell.shoulderY],
+        [shell.shoulderX - inset * 1.5, shell.shoulderY],
+        [-shell.legOuterX + inset, shell.legBottomY + inset * 1.6],
+        [shell.legOuterX - inset, shell.legBottomY + inset * 1.6],
+      ];
+    for (const [x, y] of boltSpots) {
       const bolt = new THREE.Mesh(boltGeo, titanium);
-      bolt.position.set(x, y, shell.frontZ + 0.0006);
+      bolt.position.set(x, y, shell.frontZ + 0.0006 + this._liftAt(x, y));
       this.shellGroup.add(bolt);
     }
+  }
+
+  /**
+   * How far a point on the face stands forward because it is on a raised
+   * display housing (Ferrari's whole upper centre plate) rather than on the
+   * face itself.
+   */
+  _liftAt(x, y) {
+    const { screen } = this.spec;
+    const m = screen.module;
+    if (!m?.carriesFittings) return 0;
+    const top = screen.y + screen.height / 2 + screen.bezelTop;
+    const bottom = screen.y - screen.height / 2 - screen.bezelBottom;
+    return Math.abs(x - screen.x) < screen.width / 2 + screen.bezel && y > bottom && y < top
+      ? m.depth + MODULE_BEVEL : 0;
   }
 
   /* ────────────────────────────── grips ─────────────────────────────── */
@@ -105,22 +136,52 @@ export class SteeringWheel {
     for (const side of [-1, 1]) {
       const geo = buildGripGeometry(side, grip, shell);
       this._disposables.push(geo);
-      const mesh = new THREE.Mesh(geo, this.materials.grip);
+      const main = grip.material === 'silicone' ? this.materials.silicone
+        : grip.material === 'greySilicone' ? this.materials.greySilicone : this.materials.grip;
+      // A two-tone grip (Red Bull) is a separate sleeve over the lower half.
+      const mesh = new THREE.Mesh(geo, grip.split ? [main, this.materials.sleeve] : main);
       mesh.name = `grip${side < 0 ? 'L' : 'R'}`;
+      mesh.castShadow = true;
       this.group.add(mesh);
 
       // Moulded rubber thumb rest on the driver-facing inboard quadrant.
       const pad = grip.thumbPad;
-      const padGeo = plateGeometry(pad.width, pad.height, 0.0060, 0.0010);
-      this._disposables.push(padGeo);
-      const padMesh = new THREE.Mesh(padGeo, this.materials.thumbPad);
-      padMesh.position.set(
-        side * (grip.centreX - grip.halfWidth * 0.30),
-        pad.y,
-        grip.z + grip.halfDepth * 0.86,
-      );
-      padMesh.rotation.y = side * 0.42;
-      this.group.add(padMesh);
+      if (pad) {
+        const padGeo = plateGeometry(pad.width, pad.height, 0.0060, 0.0010);
+        this._disposables.push(padGeo);
+        const padMesh = new THREE.Mesh(padGeo, this.materials.thumbPad);
+        padMesh.position.set(
+          side * (grip.centreX - grip.halfWidth * 0.30),
+          pad.y,
+          grip.z + grip.halfDepth * 0.86,
+        );
+        padMesh.rotation.y = side * 0.42;
+        this.group.add(padMesh);
+      }
+
+      // A round thumb boss moulded on the grip's front face (Ferrari).
+      if (grip.boss) {
+        const bGeo = new THREE.SphereGeometry(grip.boss.radius, 32, 16);
+        bGeo.scale(1, 1, grip.boss.flat ?? 0.45);
+        this._disposables.push(bGeo);
+        const boss = new THREE.Mesh(bGeo, mesh.material[0] ?? mesh.material);
+        boss.position.set(side * grip.boss.x, grip.boss.y, grip.z + grip.halfDepth * (grip.boss.zAt ?? 0.82));
+        boss.castShadow = true;
+        this.group.add(boss);
+      }
+
+      // A grip hung beside the body rather than moulded into it is held by
+      // carbon bridges, with open windows between them — the Mercedes.
+      for (const b of grip.bridges ?? []) {
+        const inner = b.fromX;
+        const outer = grip.centreX - grip.halfWidth * 0.4;
+        const geo = plateGeometry(outer - inner, b.height, Math.min(0.003, b.height / 3), this.spec.shell.thickness * 0.9);
+        this._disposables.push(geo);
+        const bridge = new THREE.Mesh(geo, this.materials.carbonBack);
+        bridge.position.set(side * (inner + outer) / 2, b.y, 0);
+        bridge.castShadow = true;
+        this.group.add(bridge);
+      }
 
       this._buildThumbControls(side);
     }
@@ -187,24 +248,59 @@ export class SteeringWheel {
     this.buttons = new Map();
     this.rotaries = new Map();
 
-    // Shared geometry — every face button is the same part number.
-    const capGeo = buttonCapGeometry(buttons[0].radius, buttons[0].height);
-    capGeo.rotateX(Math.PI / 2);
-    const collarGeo = new THREE.CylinderGeometry(
-      buttons[0].radius * 1.19, buttons[0].radius * 1.19, 0.0010, 28, 1, true,
-    );
-    collarGeo.rotateX(Math.PI / 2);
-    this._disposables.push(capGeo, collarGeo);
+    // Geometry shared between buttons of one size — most of a wheel's
+    // buttons are the same part number, but not all (Red Bull's N and PIT
+    // are bigger, the unmarked ones smaller).
+    const blackBezel = this.spec.livery.buttonBezel === 'black';
+    const sizes = new Map();
+    const partsFor = (b) => {
+      const key = `${b.radius}|${b.height}`;
+      if (sizes.has(key)) return sizes.get(key);
+      const capGeo = buttonCapGeometry(b.radius, b.height);
+      capGeo.rotateX(Math.PI / 2);
+      // A black bezel (Red Bull) is a proud glossy ring the cap sits down
+      // inside; the others are a thin titanium collar flush with the face.
+      const collarGeo = blackBezel
+        ? bezelGeometry(b.radius * 1.08, b.radius * 1.42, 0.0026)
+        : new THREE.CylinderGeometry(b.radius * 1.19, b.radius * 1.19, 0.0010, 28, 1, true).rotateX(Math.PI / 2);
+      this._disposables.push(capGeo, collarGeo);
+      const parts = { capGeo, collarGeo };
+      sizes.set(key, parts);
+      return parts;
+    };
 
     for (const b of buttons) {
-      const cap = new THREE.Mesh(capGeo, this.materials.caps[b.colour] ?? this.materials.caps.black);
-      cap.position.set(b.x, b.y, shell.frontZ - 0.0021);
+      const { capGeo, collarGeo } = partsFor(b);
+      const cap = new THREE.Mesh(capGeo, this._capMaterial(b.colour));
+      // A cap on a raised moulding or the display housing rides up with it.
+      const lift = (b.lift ?? 0) + this._liftAt(b.x, b.y);
+      cap.position.set(b.x, b.y, shell.frontZ - 0.0021 + lift);
       cap.userData.id = b.id;
       this.shellGroup.add(cap);
 
-      const collar = new THREE.Mesh(collarGeo, titanium);
-      collar.position.set(b.x, b.y, shell.frontZ - 0.0006);
-      this.shellGroup.add(collar);
+      // A legend printed on the cap itself, riding on its crown so it moves
+      // with the cap when it is pressed.
+      if (b.labelSide === 'cap') {
+        const ink = CAP_COLOURS[b.colour]?.label ?? (b.colour?.startsWith?.('#') ? '#111111' : '#ffffff');
+        const decal = new THREE.Mesh(
+          new THREE.PlaneGeometry(b.radius * 1.55, b.radius * 1.55),
+          new THREE.MeshPhysicalMaterial({
+            map: capLegendTexture(b.legend ?? (b.label === 'RADIO' ? '@radio' : b.label), b.ink ?? ink, b.split), transparent: true,
+            roughness: 0.35, clearcoat: 0.6, depthWrite: false,
+            polygonOffset: true, polygonOffsetFactor: -2,
+          }),
+        );
+        decal.position.z = b.height + b.radius * 0.09 + 0.00004;
+        this._disposables.push(decal.geometry, decal.material);
+        cap.add(decal);
+      }
+
+      // A flush printed disc (Ferrari's RF and K1) has no collar.
+      if (b.bezel !== false) {
+        const collar = new THREE.Mesh(collarGeo, blackBezel ? this.materials.bezelBlack : titanium);
+        collar.position.set(b.x, b.y, (blackBezel ? shell.frontZ : shell.frontZ - 0.0006) + lift);
+        this.shellGroup.add(collar);
+      }
 
       this.buttons.set(b.id, { def: b, cap, restZ: cap.position.z, press: 0 });
     }
@@ -212,6 +308,55 @@ export class SteeringWheel {
     for (const r of rotaries) {
       const dial = new THREE.Group();
       dial.position.set(r.x, r.y, shell.frontZ - 0.0010);
+
+      // An anodised collar (Red Bull): a glossy black bezel, a coloured
+      // aluminium collar standing in it, and a black knurled knob on top
+      // with the rotary's name printed across its crown.
+      // Ferrari: a tall black pointer knob standing on a printed dial, or
+      // the centre rotary's cogged ring round the yellow badge.
+      if (r.knobStyle === 'bat' || r.knobStyle === 'emblem') {
+        if (r.knobStyle === 'bat') this._buildBatKnob(dial, r);
+        else this._buildEmblemKnob(dial, r);
+        this.shellGroup.add(dial);
+        this.rotaries.set(r.id, { def: r, dial });
+        continue;
+      }
+
+      if (r.collar) {
+        this._buildCollarRotary(dial, r);
+        this.shellGroup.add(dial);
+        this.rotaries.set(r.id, { def: r, dial });
+        continue;
+      }
+
+      // A coloured knob (Mercedes): a scalloped, pointed moulding in the
+      // knob's own colour, the outline a thumb can feel.
+      if (r.knob) {
+        const knobGeo = new THREE.ExtrudeGeometry(knobShape(r.radius, r.lobes ?? 10, 0.07), {
+          depth: r.height * 0.7, bevelEnabled: true, bevelThickness: r.height * 0.18,
+          bevelSize: r.radius * 0.07, bevelSegments: 4, curveSegments: 4,
+        });
+        this._disposables.push(knobGeo);
+        const knobMat = new THREE.MeshPhysicalMaterial({
+          color: r.knob, roughness: 0.32, metalness: 0.0, clearcoat: 0.7, clearcoatRoughness: 0.2,
+        });
+        this._disposables.push(knobMat);
+        const knob = new THREE.Mesh(knobGeo, knobMat);
+        knob.castShadow = true;
+        dial.add(knob);
+
+        const tipGeo = plateGeometry(0.0016, r.radius * 0.62, 0.0007, 0.0004);
+        this._disposables.push(tipGeo);
+        const tip = new THREE.Mesh(tipGeo, new THREE.MeshPhysicalMaterial({ color: 0x14161b, roughness: 0.4 }));
+        tip.position.set(0, r.radius * 0.5, r.height * 0.88 + 0.0003);
+        dial.add(tip);
+
+        const sweep = Math.PI * 2 * 0.82;
+        dial.rotation.z = sweep / 2 - sweep * ((r.value - 1) / (r.detents - 1));
+        this.shellGroup.add(dial);
+        this.rotaries.set(r.id, { def: r, dial });
+        continue;
+      }
 
       const flankGeo = new THREE.CylinderGeometry(r.radius, r.radius * 0.99, r.height * 0.82, 56, 1, true);
       flankGeo.rotateX(Math.PI / 2);
@@ -250,23 +395,379 @@ export class SteeringWheel {
     }
   }
 
+  /**
+   * Barrel thumb rollers set into the body: a ribbed drum on a horizontal
+   * axle, half sunk in its slot, turned by rolling a thumb across it. Their
+   * colour says what they adjust.
+   */
+  _buildRollers() {
+    const { shell, rollers } = this.spec;
+    if (!rollers?.length) return;
+    for (const t of rollers) {
+      const drum = new THREE.Group();
+      // A drum on a raised pod (Red Bull) stands on the pod's face.
+      const base = shell.frontZ + (t.lift ?? 0);
+      drum.position.set(t.x, t.y, base - t.radius * 0.35);
+      // The drum's axle runs across the face at `axis` degrees from
+      // horizontal; the thumb rolls it at right angles to that.
+      drum.rotation.z = (t.axis ?? 0) * Math.PI / 180;
+      const body = new THREE.CylinderGeometry(t.radius, t.radius, t.length, 48, 1);
+      body.rotateZ(Math.PI / 2);
+      // Turn the printing so the middle number faces the driver.
+      body.rotateX(Math.PI / 2);
+      this._disposables.push(body);
+      const cap = CAP_COLOURS[t.colour] ?? CAP_COLOURS.grey;
+      const metal = t.colour === 'gold' || t.colour === 'silver';
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: rollerTexture(cap.base, t.numbers ?? [], cap.label, Math.PI / 2 + ((t.axis ?? 0) * Math.PI) / 180),
+        roughness: metal ? 0.3 : 0.4, metalness: metal ? 0.85 : 0.0,
+        clearcoat: metal ? 0 : 0.5, clearcoatRoughness: 0.25,
+      });
+      this._disposables.push(mat);
+      const mesh = new THREE.Mesh(body, mat);
+      mesh.castShadow = true;
+      // Roll the drum until the number it is set to faces the driver (the
+      // face sits a quarter of the way round the texture).
+      const count = t.numbers?.length ?? 0;
+      if (count) mesh.rotation.x = (1 - ((t.showing ?? 0) + 0.5) / count - 0.25) * Math.PI * 2;
+      drum.add(mesh);
+      // Thin end flanges, as on the real drums.
+      const flange = new THREE.CylinderGeometry(t.radius * 1.04, t.radius * 1.04, t.length * 0.08, 40);
+      flange.rotateZ(Math.PI / 2);
+      this._disposables.push(flange);
+      for (const s of [-1, 1]) {
+        const f = new THREE.Mesh(flange, this.materials.anodisedBlack);
+        f.position.x = s * t.length * 0.5;
+        drum.add(f);
+      }
+      this.shellGroup.add(drum);
+
+      // A pointer line beside the window, which the number lines up with.
+      if (t.pointer) {
+        const pGeo = plateGeometry(t.pointer.length, 0.0009, 0.0004, 0.0006);
+        this._disposables.push(pGeo);
+        const p = new THREE.Mesh(pGeo, this.materials.inkWhite);
+        p.position.set(t.x + t.pointer.dx, t.y, base + 0.0003);
+        this.shellGroup.add(p);
+      }
+
+      // The roller's name stacked letter over letter beside it, on whatever
+      // surface the drum stands on.
+      if (t.labelVertical && t.labelAt) {
+        const { texture, aspect } = stackedLabelTexture(t.label, '#eef1f5', { box: !!t.labelBox });
+        const h = t.labelHeight ?? 0.016;
+        const geo = new THREE.PlaneGeometry(h * aspect, h);
+        const mat = new THREE.MeshPhysicalMaterial({
+          map: texture, transparent: true, roughness: 0.5, depthWrite: false,
+          polygonOffset: true, polygonOffsetFactor: -2,
+        });
+        this._disposables.push(geo, mat);
+        const label = new THREE.Mesh(geo, mat);
+        label.position.set(t.x + t.labelAt[0], t.y + t.labelAt[1], base + 0.00012);
+        this.shellGroup.add(label);
+      }
+    }
+  }
+
+  /**
+   * Raised housings standing on the face (Red Bull's roller pods beside the
+   * grips): a rounded polygon extruded forward, in the grip's grey.
+   */
+  _buildPods() {
+    const { shell, pods } = this.spec;
+    for (const pod of pods ?? []) {
+      for (const side of [-1, 1]) {
+        const pts = pod.points.map(([x, y]) => [side * x, y]);
+        if (side < 0) pts.reverse();          // keep the winding anticlockwise
+        const shape = roundedPolyShape(pts, pod.radius ?? 0.004);
+        const bevel = Math.min(0.0018, pod.depth * 0.3);
+        const geo = new THREE.ExtrudeGeometry(shape, {
+          depth: pod.depth - bevel, bevelEnabled: true, bevelThickness: bevel,
+          bevelSize: bevel, bevelSegments: 5, curveSegments: 10,
+        });
+        this._disposables.push(geo);
+        const mat = pod.material === 'grip' ? (this.spec.grip.material === 'silicone' ? this.materials.silicone : this.materials.grip)
+          : pod.material === 'gloss' ? this.materials.bezelBlack : this.materials.podSatin;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.z = shell.frontZ - 0.0010;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.shellGroup.add(mesh);
+      }
+    }
+  }
+
+  /** A cap's material: a named anodised colour, or any hex sampled from a photo. */
+  _capMaterial(colour) {
+    if (this.materials.caps[colour]) return this.materials.caps[colour];
+    if (typeof colour === 'string' && colour.startsWith('#')) {
+      this._hexCaps ??= new Map();
+      if (!this._hexCaps.has(colour)) {
+        const m = new THREE.MeshPhysicalMaterial({
+          color: colour, roughness: 0.42, metalness: 0.1, clearcoat: 0.4, clearcoatRoughness: 0.25,
+          envMapIntensity: 1.2,
+        });
+        this._hexCaps.set(colour, m);
+        this._disposables.push(m);
+      }
+      return this._hexCaps.get(colour);
+    }
+    return this.materials.caps.black;
+  }
+
+  /**
+   * A tall black pointer knob, as on Ferrari's selectors: a round boss with
+   * an elongated grip standing on it, its long axis pointing at the
+   * selected position.
+   */
+  _buildBatKnob(dial, r) {
+    const h = r.height;
+    const bossGeo = new THREE.CylinderGeometry(r.radius * 0.78, r.radius * 0.84, h * 0.32, 40);
+    bossGeo.rotateX(Math.PI / 2);
+    const len = r.radius * 2.5, wid = r.radius * 1.0;
+    const shape = new THREE.Shape();
+    const rr = wid / 2;
+    shape.moveTo(-rr, -len / 2 + rr);
+    shape.lineTo(-rr * 0.82, len / 2 - rr);
+    shape.absarc(0, len / 2 - rr, rr * 0.82, Math.PI, 0, true);
+    shape.lineTo(rr, -len / 2 + rr);
+    shape.absarc(0, -len / 2 + rr, rr, 0, Math.PI, true);
+    const bevel = Math.min(wid * 0.28, h * 0.22);
+    const gripGeo = new THREE.ExtrudeGeometry(shape, {
+      depth: h * 0.95 - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.9,
+      bevelSegments: 6, curveSegments: 16,
+    });
+    gripGeo.translate(0, 0, bevel);
+    this._disposables.push(bossGeo, gripGeo);
+    const boss = new THREE.Mesh(bossGeo, this.materials.knobBlack);
+    boss.position.z = h * 0.16;
+    dial.add(boss);
+    const grip = new THREE.Mesh(gripGeo, this.materials.knobBlack);
+    grip.castShadow = true;
+    dial.add(grip);
+    // Angles are clockwise from twelve o'clock.
+    dial.rotation.z = -((r.pointAt ?? 0) * Math.PI) / 180;
+  }
+
+  /** Ferrari's centre rotary: a black cog ring round a yellow badge. */
+  _buildEmblemKnob(dial, r) {
+    const h = r.height;
+    const gearGeo = new THREE.ExtrudeGeometry(knobShape(r.radius, r.lobes ?? 14, 0.16), {
+      depth: h * 0.8, bevelEnabled: true, bevelThickness: h * 0.1, bevelSize: r.radius * 0.04,
+      bevelSegments: 3, curveSegments: 4,
+    });
+    this._disposables.push(gearGeo);
+    const gear = new THREE.Mesh(gearGeo, this.materials.knurlBlack);
+    gear.castShadow = true;
+    dial.add(gear);
+    const discGeo = new THREE.CircleGeometry(r.radius * 0.72, 64);
+    const discMat = new THREE.MeshPhysicalMaterial({
+      map: emblemTexture(r.emblem ?? '#f6d21c'), roughness: 0.3, clearcoat: 1.0, clearcoatRoughness: 0.08,
+    });
+    this._disposables.push(discGeo, discMat);
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.position.z = h + 0.0002;
+    dial.add(disc);
+  }
+
+  /**
+   * Small fittings on the face: indicator lenses, toggle switches and raised
+   * label tabs.
+   */
+  _buildFittings() {
+    const { shell } = this.spec;
+    const z0 = shell.frontZ;
+    for (const ind of this.spec.indicators ?? []) {
+      const r = ind.radius ?? 0.0022;
+      const ring = bezelGeometry(r * 1.0, r * 1.55, 0.0012);
+      const lensGeo = new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+      lensGeo.rotateX(Math.PI / 2);
+      lensGeo.scale(1, 1, 0.45);
+      const col = new THREE.Color(ind.colour);
+      const lensMat = new THREE.MeshPhysicalMaterial({
+        color: col, emissive: col.clone().multiplyScalar(0.18), roughness: 0.15,
+        clearcoat: 1.0, clearcoatRoughness: 0.05, transparent: true, opacity: 0.9,
+      });
+      this._disposables.push(ring, lensGeo, lensMat);
+      const lift = this._liftAt(ind.x, ind.y);
+      const bz = new THREE.Mesh(ring, ind.bezel === 'chrome' ? this.materials.titanium : this.materials.bezelBlack);
+      bz.position.set(ind.x, ind.y, z0 + lift);
+      const lens = new THREE.Mesh(lensGeo, lensMat);
+      lens.position.set(ind.x, ind.y, z0 + 0.0004 + lift);
+      this.shellGroup.add(bz, lens);
+    }
+    for (const t of this.spec.toggles ?? []) {
+      const nutGeo = new THREE.CylinderGeometry(0.0034, 0.0034, 0.0016, 6);
+      nutGeo.rotateX(Math.PI / 2);
+      const leverGeo = new THREE.CylinderGeometry(0.0010, 0.0008, 0.0085, 16);
+      leverGeo.translate(0, 0.0042, 0);
+      const tipGeo = new THREE.SphereGeometry(0.0013, 16, 10);
+      this._disposables.push(nutGeo, leverGeo, tipGeo);
+      const nut = new THREE.Mesh(nutGeo, this.materials.titanium);
+      nut.position.set(t.x, t.y, z0 + 0.0008);
+      const lever = new THREE.Group();
+      lever.position.set(t.x, t.y, z0 + 0.0016);
+      // Thrown towards one legend, standing out of the face.
+      lever.rotation.x = Math.PI / 2 - 0.35;
+      const stem = new THREE.Mesh(leverGeo, this.materials.titanium);
+      const tip = new THREE.Mesh(tipGeo, this.materials.titanium);
+      tip.position.y = 0.0086;
+      lever.add(stem, tip);
+      this.shellGroup.add(nut, lever);
+    }
+    for (const tb of this.spec.tabs ?? []) {
+      const depth = tb.depth ?? 0.0040;
+      const geo = plateGeometry(tb.w, tb.h, Math.min(tb.h * 0.3, 0.0015), depth, 0.0006);
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: tabTextTexture(tb.text, tb.ink ?? '#ffffff', tb.w / tb.h),
+        roughness: 0.2, clearcoat: 1.0, clearcoatRoughness: 0.08, metalness: 0.1,
+      });
+      // The text texture goes on the front face only; the rest stays black.
+      const black = this.materials.bezelBlack;
+      this._disposables.push(geo, mat);
+      // A tab can be turned (SOC, EB read down the side of the display), and
+      // a plain one is just the white legend printed on the surface.
+      const lift = this._liftAt(tb.x, tb.y);
+      const holder = new THREE.Group();
+      holder.position.set(tb.x, tb.y, z0 + lift);
+      holder.rotation.z = ((tb.angle ?? 0) * Math.PI) / 180;
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(tb.w * 0.94, tb.h * 0.9), mat);
+      this._disposables.push(face.geometry);
+      if (tb.plain) {
+        mat.transparent = true;
+        mat.depthWrite = false;
+        mat.polygonOffset = true;
+        mat.polygonOffsetFactor = -2;
+        face.position.z = 0.00015;
+        holder.add(face);
+      } else {
+        const block = new THREE.Mesh(geo, black);
+        block.position.z = depth / 2;
+        block.castShadow = true;
+        face.position.z = depth + 0.0007;
+        holder.add(block, face);
+      }
+      this.shellGroup.add(holder);
+    }
+  }
+
+  /** The Red Bull rotary: bezel, anodised collar, knurled knob, printed crown. */
+  _buildCollarRotary(dial, r) {
+    const cr = r.collarRadius ?? r.radius * 1.5;
+    const bezelH = 0.0022, collarH = r.collarHeight ?? 0.0055, knobH = r.knobHeight ?? 0.0095;
+
+    const bezel = bezelGeometry(cr * 1.0, cr * 1.16, bezelH);
+    this._disposables.push(bezel);
+    const bz = new THREE.Mesh(bezel, this.materials.bezelBlack);
+    bz.position.z = 0.0010;
+    dial.add(bz);
+
+    // The collar: a short cylinder with a chamfered top edge, so the ring of
+    // anodise catches a bright line where it turns over.
+    // Lathed along +y; turned so it stands out of the face (+z).
+    const collarGeo = rotaryBodyGeometry(cr * 0.98, collarH, { chamfer: 0.18, segments: 64 });
+    collarGeo.rotateX(Math.PI / 2);
+    const collarMat = new THREE.MeshPhysicalMaterial({
+      color: r.collar, metalness: 0.78, roughness: 0.3, clearcoat: 0.4, clearcoatRoughness: 0.2,
+      envMapIntensity: 1.4,
+    });
+    this._disposables.push(collarGeo, collarMat);
+    const collar = new THREE.Mesh(collarGeo, collarMat);
+    collar.castShadow = true;
+    dial.add(collar);
+
+    // Knurled black knob: the flank carries the knurl, the crown is smooth.
+    const flankGeo = new THREE.CylinderGeometry(r.radius, r.radius * 1.02, knobH * 0.86, 56, 1, true);
+    flankGeo.rotateX(Math.PI / 2);
+    const capGeo = rotaryBodyGeometry(r.radius, knobH * 0.16, { chamfer: 0.5, segments: 56 });
+    capGeo.rotateX(Math.PI / 2);
+    this._disposables.push(flankGeo, capGeo);
+    const flank = new THREE.Mesh(flankGeo, this.materials.knurlBlack);
+    flank.position.z = collarH + knobH * 0.43;
+    flank.castShadow = true;
+    dial.add(flank);
+    const crown = new THREE.Mesh(capGeo, this.materials.knobBlack);
+    crown.position.z = collarH + knobH * 0.84;
+    dial.add(crown);
+
+    const decal = new THREE.Mesh(
+      new THREE.PlaneGeometry(r.radius * 1.9, r.radius * 1.9),
+      new THREE.MeshPhysicalMaterial({
+        map: capLegendTexture(r.legend ?? r.label, '#f1f3f6'), transparent: true,
+        roughness: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2,
+      }),
+    );
+    decal.position.z = collarH + knobH + 0.0002;
+    this._disposables.push(decal.geometry, decal.material);
+    dial.add(decal);
+  }
+
   /* ───────────────────────────── display ────────────────────────────── */
 
   _buildDisplay() {
     const { screen, shell } = this.spec;
     this.display = new Display(screen);
 
+    // A display module — Mercedes — is a block of black glass standing proud
+    // of the carbon, with the screen and the shift lights inside it.
+    // Everything in the module sits on its front face: its depth plus the
+    // bevel that rounds its edge, or the glass covers the screen.
+    const lift = screen.module ? screen.module.depth + MODULE_BEVEL : 0;
+    if (screen.module) {
+      const m = screen.module;
+      const top = screen.y + screen.height / 2 + screen.bezelTop;
+      const bottom = screen.y - screen.height / 2 - screen.bezelBottom;
+      const moduleGeo = plateGeometry(screen.width + screen.bezel * 2, top - bottom,
+        m.radius, m.depth, MODULE_BEVEL);
+      this._disposables.push(moduleGeo);
+      // Red Bull's is a satin black housing rather than glass.
+      const glassBlock = new THREE.Mesh(moduleGeo, m.finish === 'satin' ? this.materials.housingSatin
+        : m.finish === 'carbon' ? this.materials.carbonPlain : this.materials.moduleGlass);
+      glassBlock.position.set(screen.x, (top + bottom) / 2, shell.frontZ + m.depth / 2);
+      glassBlock.castShadow = true;
+      this.shellGroup.add(glassBlock);
+      // A housing wider at the top, round the shift lights, than at its neck.
+      if (m.upper) {
+        const upGeo = plateGeometry(m.upper.halfWidth * 2, top - m.upper.bottom, m.radius, m.depth, MODULE_BEVEL);
+        this._disposables.push(upGeo);
+        const up = new THREE.Mesh(upGeo, glassBlock.material);
+        up.position.set(screen.x, (top + m.upper.bottom) / 2, shell.frontZ + m.depth / 2);
+        up.castShadow = true;
+        this.shellGroup.add(up);
+      }
+    }
+
+    // On a carbon housing the lights sit in black windows of their own, and
+    // the glass in a thin black frame.
+    if (screen.module?.finish === 'carbon') {
+      const { lightBar } = this.spec;
+      const plates = [[0, lightBar.y, lightBar.width + 0.002, lightBar.height]];
+      if (lightBar.flags === 'stacked') {
+        const ys = lightBar.flagYs;
+        const span = Math.max(...ys) - Math.min(...ys);
+        for (const sx of [-1, 1]) plates.push([sx * lightBar.flagX, (Math.max(...ys) + Math.min(...ys)) / 2, 0.0064, span + 0.0080]);
+      }
+      plates.push([screen.x, screen.y, screen.width + 0.0030, screen.height + 0.0030]);
+      for (const [x, y, w, h] of plates) {
+        const g = plateGeometry(w, h, Math.min(0.0015, h / 3), 0.0004, 0.0001);
+        this._disposables.push(g);
+        const p = new THREE.Mesh(g, this.materials.bezelBlack);
+        p.position.set(x, y, shell.frontZ + lift + 0.0002);
+        this.shellGroup.add(p);
+      }
+    }
+
     const panelGeo = new THREE.PlaneGeometry(screen.width, screen.height);
     this._disposables.push(panelGeo);
     const panel = new THREE.Mesh(panelGeo, this.display.material);
-    panel.position.set(screen.x, screen.y, shell.frontZ + 0.0007);
+    panel.position.set(screen.x, screen.y, shell.frontZ + lift + 0.0007);
     panel.castShadow = false;
     this.shellGroup.add(panel);
 
     const glassGeo = plateGeometry(screen.width + 0.0035, screen.height + 0.0035, screen.radius, 0.0011);
     this._disposables.push(glassGeo);
     const glass = new THREE.Mesh(glassGeo, this.materials.screenGlass);
-    glass.position.set(screen.x, screen.y, shell.frontZ + 0.0016);
+    glass.position.set(screen.x, screen.y, shell.frontZ + lift + 0.0016);
     glass.renderOrder = 2;
     glass.castShadow = false;
     this.shellGroup.add(glass);
@@ -275,7 +776,7 @@ export class SteeringWheel {
     // surrounding carbon without either blowing a highlight into the glass
     // or hanging in the bottom cut-out where there is nothing to light.
     this.screenGlow = new THREE.PointLight(0x8fd0ff, 0.013, 0.15, 2);
-    this.screenGlow.position.set(screen.x, screen.y, shell.frontZ + 0.034);
+    this.screenGlow.position.set(screen.x, screen.y, shell.frontZ + lift + 0.034);
     this.shellGroup.add(this.screenGlow);
   }
 
@@ -514,6 +1015,26 @@ export class SteeringWheel {
 /* ───────────────────────────── helpers ───────────────────────────── */
 
 /**
+ * A raised ring round a button or rotary: a lathed profile with a rounded
+ * outer shoulder and a small inner lip, standing `height` off the face.
+ */
+function bezelGeometry(inner, outer, height) {
+  const pts = [];
+  const shoulder = Math.min(height * 0.7, (outer - inner) * 0.45);
+  pts.push(new THREE.Vector2(outer, 0));
+  for (let i = 0; i <= 6; i++) {
+    const a = (i / 6) * Math.PI / 2;
+    pts.push(new THREE.Vector2(outer - shoulder + Math.cos(a) * shoulder, height - shoulder + Math.sin(a) * shoulder));
+  }
+  pts.push(new THREE.Vector2(inner + 0.0003, height));
+  pts.push(new THREE.Vector2(inner, height - 0.0004));
+  pts.push(new THREE.Vector2(inner, 0));
+  const geo = new THREE.LatheGeometry(pts, 48);
+  geo.rotateX(Math.PI / 2);
+  return geo;
+}
+
+/**
  * Re-sorts an ExtrudeGeometry's triangles into three material groups —
  * front cap, side walls, back cap — so each can take its own material.
  */
@@ -585,7 +1106,35 @@ function buildGripGeometry(side, grip, shell, { steps = 110, radial = 44 } = {})
   // Blunt ends: near-full section along almost the whole handle, closing
   // quickly at the caps. A plain sine taper leaves the grip looking inflated
   // in the middle and pointed at the tips.
-  const taper = (t) => Math.pow(1 - Math.pow(Math.abs(2 * t - 1), 7), 0.42);
+  const roundEnds = (t) => Math.pow(1 - Math.pow(Math.abs(2 * t - 1), 7), 0.42);
+  // A grip whose top runs up into the body (Mercedes) only closes at the
+  // bottom; its top end is buried under the corner of the wheel.
+  const taper = grip.openTop
+    ? (t) => (t < 0.5 ? 1 : roundEnds(t))
+    : roundEnds;
+
+  // A measured grip gives its centreline and width at a list of heights —
+  // a gentle banana, wide at the top where it tucks under the corner and
+  // narrowing toward the bottom — interpolated smoothly between them.
+  const profileAt = (y) => {
+    const pts = grip.profile;
+    if (!pts) return null;
+    if (y >= pts[0][0]) return { x: pts[0][1], hw: pts[0][2] };
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [y0, x0, w0] = pts[i], [y1, x1, w1] = pts[i + 1];
+      if (y <= y0 && y >= y1) {
+        const u = (y0 - y) / (y0 - y1);
+        const s = u * u * (3 - 2 * u);
+        return { x: x0 + (x1 - x0) * s, hw: w0 + (w1 - w0) * s };
+      }
+    }
+    const last = pts[pts.length - 1];
+    return { x: last[1], hw: last[2] };
+  };
+
+  // A sleeve over the lower part (Red Bull) stands a little proud of the
+  // upper grip, so the joint reads as a step.
+  const sleeveAt = (y) => (grip.split && y < grip.split.y ? 1 + (grip.split.proud ?? 0.05) : 1);
 
   const groove = (t) => {
     let g = 0;
@@ -604,7 +1153,8 @@ function buildGripGeometry(side, grip, shell, { steps = 110, radial = 44 } = {})
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const cy = grip.topY - span * t;
-    const cx = side * (grip.centreX + grip.bowX * Math.sin(Math.PI * t));
+    const prof = profileAt(cy);
+    const cx = side * (prof ? prof.x : grip.centreX + grip.bowX * Math.sin(Math.PI * t));
     const cz = grip.z + grip.zRakeTop * (1 - t);
 
     const k = taper(t);
@@ -620,8 +1170,9 @@ function buildGripGeometry(side, grip, shell, { steps = 110, radial = 44 } = {})
       const wrap = 0.5 + 0.5 * Math.cos(theta - grooveAxis);
       const shrink = 1 - 0.105 * gk * (0.25 + 0.75 * wrap);
 
-      const hw = grip.halfWidth * k * shrink;
-      const hd = grip.halfDepth * k * shrink;
+      const sv = sleeveAt(cy);
+      const hw = (prof ? prof.hw : grip.halfWidth) * k * shrink * sv;
+      const hd = grip.halfDepth * k * shrink * sv;
 
       positions.push(cx + ex * hw, cy, cz + ey * hd);
       uvs.push(j / radial, t * 3.2);
@@ -646,5 +1197,15 @@ function buildGripGeometry(side, grip, shell, { steps = 110, radial = 44 } = {})
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
+  if (grip.split) {
+    // Rows above the joint take the grip's own material, rows below the
+    // sleeve's.
+    let row = steps;
+    for (let i = 0; i < steps; i++) {
+      if (grip.topY - span * ((i + 0.5) / steps) < grip.split.y) { row = i; break; }
+    }
+    geo.addGroup(0, row * radial * 6, 0);
+    geo.addGroup(row * radial * 6, (steps - row) * radial * 6, 1);
+  }
   return geo;
 }

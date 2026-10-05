@@ -133,12 +133,26 @@ export function carbonWeave({
   size = 1024,
   cells = 24,
   seed = 7,
-  base = [14, 16, 21],
-  peak = [96, 104, 122],
+  // Real carbon is close to black: the weave shows in how each tow catches
+  // the light, not in its colour. A bright, blue-grey albedo is what made it
+  // read as denim.
+  base = [8, 9, 10],
+  peak = [40, 41, 45],
   fibres = 9,
 } = {}) {
   const { canvas: col, ctx: c } = createCanvas(size);
   const { canvas: hgt, ctx: h } = createCanvas(size);
+  // Which way the fibres run under each pixel, and how strongly that shows:
+  // the anisotropy map. Red/green carry the direction, blue the strength.
+  // A tow's fibres run along it, so a warp tow streaks its highlight one
+  // way and a weft tow the other — the shimmer that makes carbon carbon.
+  const { canvas: dir, ctx: d } = createCanvas(size);
+  d.fillStyle = 'rgb(128,128,0)';
+  d.fillRect(0, 0, size, size);
+  // And how glossy: the crown of a tow is smoother than the resin between.
+  const { canvas: towRough, ctx: tr } = createCanvas(size);
+  tr.fillStyle = 'rgb(150,150,150)';
+  tr.fillRect(0, 0, size, size);
   const rand = mulberry32(seed);
   const cell = size / cells;
 
@@ -172,6 +186,21 @@ export function carbonWeave({
     }
     h.fillStyle = gh;
     h.fillRect(x, y, w, hh);
+
+    // Along the tow: warp (vertical) fibres run up the texture, weft across.
+    const strength = Math.round(255 * (0.45 + 0.55 * lift));
+    d.fillStyle = vertical ? `rgb(128,255,${strength})` : `rgb(255,128,${strength})`;
+    d.fillRect(x, y, w, hh);
+    const gr = vertical
+      ? tr.createLinearGradient(x, 0, x + w, 0)
+      : tr.createLinearGradient(0, y, 0, y + hh);
+    for (let i = 0; i <= 8; i++) {
+      const crown = Math.pow(Math.sin(Math.PI * (i / 8)), 0.6) * lift;
+      const v = (0.62 - 0.34 * crown) * 255 | 0;
+      gr.addColorStop(i / 8, `rgb(${v},${v},${v})`);
+    }
+    tr.fillStyle = gr;
+    tr.fillRect(x, y, w, hh);
 
     // Individual filaments running the length of the tow.
     c.save();
@@ -216,27 +245,30 @@ export function carbonWeave({
     }
   }
 
-  // Resin layer: broad, slow variation in gloss + a faint blue-grey cast.
+  // Resin layer: broad, slow variation in tone and gloss over the weave's
+  // own crown-and-valley roughness. Neutral — no colour cast.
   const fbm = makeFbm(seed + 41, 4, 32);
   const img = c.getImageData(0, 0, size, size);
+  const towR = tr.getImageData(0, 0, size, size).data;
   const rough = createCanvas(size);
   const rimg = rough.ctx.createImageData(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const n = fbm((x / size) * 6, (y / size) * 6);
       const i = (y * size + x) * 4;
-      img.data[i]     = Math.min(255, img.data[i] * (0.88 + n * 0.3));
-      img.data[i + 1] = Math.min(255, img.data[i + 1] * (0.88 + n * 0.3));
-      img.data[i + 2] = Math.min(255, img.data[i + 2] * (0.90 + n * 0.3));
-      const rv = (0.30 + n * 0.26) * 255;
-      rimg.data[i] = rimg.data[i + 1] = rimg.data[i + 2] = rv | 0;
+      const k = 0.9 + n * 0.2;
+      img.data[i]     = Math.min(255, img.data[i] * k);
+      img.data[i + 1] = Math.min(255, img.data[i + 1] * k);
+      img.data[i + 2] = Math.min(255, img.data[i + 2] * k);
+      const rv = (towR[i] / 255) * (0.85 + n * 0.3) * 255;
+      rimg.data[i] = rimg.data[i + 1] = rimg.data[i + 2] = Math.min(255, rv) | 0;
       rimg.data[i + 3] = 255;
     }
   }
   c.putImageData(img, 0, 0);
   rough.ctx.putImageData(rimg, 0, 0);
 
-  return { color: col, height: hgt, roughness: rough.canvas };
+  return { color: col, height: hgt, roughness: rough.canvas, direction: dir };
 }
 
 /* ───────────────────────────── alcantara ──────────────────────────── */

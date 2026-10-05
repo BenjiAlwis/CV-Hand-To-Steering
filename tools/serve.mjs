@@ -33,6 +33,8 @@ const TYPES = {
   '.wasm': 'application/wasm',
   // MediaPipe's model bundle; the browser only ever fetches it as bytes.
   '.task': 'application/octet-stream',
+  // The studio HDRI for the reflections, read as raw bytes by RGBELoader.
+  '.hdr': 'application/octet-stream',
 };
 
 /**

@@ -25,6 +25,11 @@
  * @returns {Array<[number, number]>}
  */
 export function shellStations(p) {
+  // A wheel whose outline does not fit the leg-and-cut-out pattern — the
+  // Mercedes, whose body has neither, with grips hung off it instead — gives
+  // its stations directly, measured from the part.
+  if (p.stations) return p.stations.map(([x, y]) => [x, y]);
+
   const tip = p.legTipRadius;
 
   const stations = [

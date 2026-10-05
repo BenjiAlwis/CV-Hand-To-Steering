@@ -176,7 +176,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 const padFor = (binding, pads) => pads.find((p) => p?.id === binding?.pad) ?? null;
 
-const buttonValue = (b) => (b == null ? 0 : typeof b === 'number' ? b : (b.value || (b.pressed ? 1 : 0)));
+export const buttonValue = (b) => (b == null ? 0 : typeof b === 'number' ? b : (b.value || (b.pressed ? 1 : 0)));
 
 /**
  * The wheel's angle in degrees, positive to the right, or null if its

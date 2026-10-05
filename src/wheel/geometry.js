@@ -125,8 +125,8 @@ export function plateGeometry(w, h, r, depth, bevel = 0.0004) {
     bevelEnabled: bevel > 0,
     bevelThickness: bevel,
     bevelSize: bevel,
-    bevelSegments: 2,
-    curveSegments: 8,
+    bevelSegments: 4,
+    curveSegments: 24,
   });
   geo.translate(0, 0, -depth / 2);
   planarUV(geo, -w / 2, -h / 2, w / 2, h / 2);

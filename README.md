@@ -192,6 +192,25 @@ drives, so the rim doesn't overshoot and wobble where it stops. The rig's
 wheel follows the rim through a filter that is steady when the rim is still
 and opens up at once for a fast turn.
 
+**The motor only moves with a wheel fitted.** A wheelbase with nothing on
+it can spin its bare rotor fast and hard enough to damage the base, its
+quick release and anything attached to it. So Centre, Calibrate and Force all
+wait until a wheel is shown to be on the base, in one of three ways:
+
+- you press any button on the wheel (only a rim has buttons);
+- the rim answers the base, for Moza rims that can (a read-only question,
+  the same one Boxflat uses; some rims, the ES among them, do not answer);
+- you click **A wheel is fitted** on the WHEEL BASE panel.
+
+Until then the panel says why the motor is still, and the **RIM** chip stays
+grey. The proof is forgotten whenever the base reconnects. A rim that stops
+answering the base mid-move stops the move. As a backstop for everything
+else, if the rotor ever turns far faster than it is being driven (over
+900°/s, against the 300°/s the motor paces it at) the motor lets go at once.
+
+The check can be turned off in settings under STEERING WHEEL, after a
+warning, at your own risk. It turns itself back on every time the rig starts.
+
 **Force** on the panel turns the rim-follows-rig direction on and off. Its
 strength is in settings (<kbd>S</kbd>), defaulting to 30%. A direct-drive
 base is strong, so keep hands clear of the rim the first time. The rim is
@@ -261,9 +280,10 @@ turn is asked for a quarter turn instead. Or type the wheel's rotation into
 | `V` | camera on / off |
 | `Z` | re-zero your hands |
 | `N` | neutral; hold for reverse |
-| `T` | change wheel (Ferrari → Mercedes → Red Bull) |
+| `T` | change wheel (Ferrari → Mercedes → Red Bull → Basic wheel 1) |
 | `C` | free orbit camera |
 | `1` `2` `3` | driver / three-quarter / detail framing |
+| `4` `5` | from behind the wheel: rear three-quarter / rear low |
 | `R` | recentre |
 | `H` | hide the overlay |
 
@@ -278,12 +298,13 @@ change together.
 
 | | Ferrari | Mercedes | Red Bull |
 |---|---|---|---|
-| silhouette | an elongated rectangle: widest on the grid, flat top, square corners | rectangle with a **fold** in the top edge, one of the longest | the **Space Invader**: a stepped shoulder cutting in below a narrower top |
-| width | 292 mm | 286 mm | 279 mm |
-| fascia buttons | 12 | 12 | **6** |
-| rotaries | 6, and all of them low | 3, with sub-menus | 4 |
+| silhouette | an elongated rectangle: widest on the grid, flat top, square corners | a compact body with a **straight bottom**, a top that dips in the middle to raised corners, and **separate grips hung beside it** with open windows between | the **Space Invader**: a stepped shoulder cutting in below a narrower top |
+| width | 292 mm | 277 mm (280 real) | 279 mm |
+| fascia buttons | 12 | 12, six a side, no top row | **6** |
+| rotaries | 6, and all of them low | 3 low in the centre (STRAT, MENU, HPP) plus **6 barrel thumb rollers** in the body | 4 |
+| display | in the carbon, rev bar along the top | a **raised black glass module**, with the 15 shift lights inside it above the screen | in the carbon, rev bar along the top |
 | paddles | large blades set low, twin clutch | **single wishbone clutch** on the centreline | two extra **flaps** for DRS and overtake |
-| livery | yellow, and plenty of it | Petronas green, bottom right only | navy with red and yellow |
+| livery | yellow, and plenty of it | bare gloss carbon; mint only on the HPP rotary | charcoal with red and yellow |
 
 None of that is invented. Ferrari runs the most switchgear on the grid and,
 unlike Mercedes, does not fold it into menus — six selectors, all low, with the
@@ -292,6 +313,34 @@ into three rotaries with sub-menus and keeps a wishbone clutch paddle with a
 finger socket moulded into it. Red Bull deletes buttons for weight and to cut
 the risk of hitting the wrong one, and famously has no DRS button at all: DRS
 is a flap behind the wheel, next to the shifters.
+
+The Mercedes is modelled on measurements of the officially licensed replica of
+the 2024/25 wheel, which follows the team's CAD. Its layout has barely changed
+since 2019.
+
+## Graphics
+
+Settings (<kbd>S</kbd>) → **Graphics** has four levels. The hand and foot
+tracking share the graphics card with the scene, so if tracking feels slow,
+lower this first.
+
+| | Low | Medium | High (default) | Ultra |
+|---|---|---|---|---|
+| reflections | baked from the rig | photographed studio (HDR) | studio | studio |
+| softbox area lights | — | ✓ | ✓ | ✓ |
+| key-light shadow | 1024 px | 2048 px | 4096 px | 4096 px |
+| ambient occlusion | — | — | ✓ | ✓ |
+| vignette / film grain | — | vignette | both | both |
+| depth of field (detail view) | — | — | — | ✓ |
+| pixel density | 1× | up to 1.5× | up to 1.5× | up to 2× |
+
+The carbon is close to black, as real carbon is. Its 2×2 twill shows through
+the way each tow catches the light: the fibres run along a tow, so warp and
+weft streak their highlights in different directions (an anisotropy map).
+
+The studio is *Studio Small 08* by Sergej Majboroda, from
+[Poly Haven](https://polyhaven.com/a/studio_small_08) (CC0), bundled in
+`assets/env/` so the app still starts with no network.
 
 ## What the wheels are modelled on
 

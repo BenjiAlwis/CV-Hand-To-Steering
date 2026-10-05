@@ -22,6 +22,7 @@ const MODES = {
   centring: 'calibrating…',
   measuring: 'measuring…',
   returning: 'centring…',
+  checking: 'wheel fitted?',
   leading: 'rim leads',
   following: 'rim follows',
 };
@@ -42,7 +43,8 @@ export class RimPanel {
       name: $('rimName'), sub: $('rimSub'),
       rimNeedle: $('rimNeedle'), rigNeedle: $('rimRigNeedle'),
       rimAngle: $('rimAngle'), rigAngle: $('rigAngle'), mode: $('rimMode'),
-      ffb: $('rimChipFfb'), base: $('rimChipBase'), paddles: $('rimChipPaddles'),
+      ffb: $('rimChipFfb'), base: $('rimChipBase'), paddles: $('rimChipPaddles'), rim: $('rimChipRim'),
+      fitted: $('rimFitted'),
       shift: $('rimShift'), prompt: $('rimPrompt'), skip: $('rimSkip'), cancel: $('rimCancel'),
       rotation: $('rimRotation'), measure: $('rimMeasure'),
       toggle: $('rimToggle'), force: $('rimForce'), setup: $('rimSetup'), centre: $('rimCentre'),
@@ -58,8 +60,10 @@ export class RimPanel {
     this.el.ret.addEventListener('click', () => wheel.centre());
     this.el.measure.addEventListener('click', () => wheel.measureRotation());
     this.el.skip.addEventListener('click', () => wheel.skipStep());
+    this.el.fitted.addEventListener('click', () => wheel.confirmRim());
     this.el.cancel.addEventListener('click', () => {
-      if (wheel.returning) wheel.cancelReturn();
+      if (wheel.rimCheck) wheel.cancelRimCheck();
+      else if (wheel.returning) wheel.cancelReturn();
       else if (wheel.centring || wheel.awaitingBase) wheel.cancelCentre();
       else if (wheel.measuring) wheel.cancelMeasure();
       else wheel.cancelWizard();
@@ -109,14 +113,21 @@ export class RimPanel {
     const measuring = w.measuring;
     const awaiting = w.awaitingBase;
     const returning = w.returning;
-    const busy = !!(wizard || centring || measuring || awaiting || returning);
+    const checking = w.rimCheck;
+    const busy = !!(wizard || centring || measuring || awaiting || returning || checking);
     // How the last centring or measuring went stays up for a few seconds, then clears.
     const latest = [w.centreResult, w.measureResult].filter(Boolean).sort((a, b) => b.at - a.at)[0];
     const result = !busy && latest && performance.now() - latest.at < 6000 ? latest : null;
     el.cancel.hidden = !busy;
     el.skip.hidden = !wizard;
+    el.fitted.hidden = !checking;
     el.toggle.hidden = el.force.hidden = el.setup.hidden = el.centre.hidden = el.ret.hidden = busy;
-    if (wizard) {
+    // The force that would turn the rim is held until a wheel is shown fitted.
+    const held = w.connected && on && w.drivable && force && !w.motorAllowed && !busy && !result;
+    if (checking) {
+      setText(el.prompt, RIM_PROMPT);
+      tone(el.prompt, 'ask');
+    } else if (wizard) {
       const n = Math.min(wizard.step + 1, wizard.steps.length);
       setText(el.prompt, wizard.listening && wizard.current
         ? `${n}/${wizard.steps.length} · ${wizard.current.prompt}`
@@ -134,12 +145,15 @@ export class RimPanel {
     } else if (result) {
       setText(el.prompt, result.text);
       tone(el.prompt, result.ok ? 'ok' : 'warn');
+    } else if (held) {
+      setText(el.prompt, 'Force is held until a wheel is shown to be on the base — press any button on it.');
+      tone(el.prompt, 'warn');
     } else if (w.connected && !w.rotationKnown) {
       // Never quietly: an unknown rotation turns the rig the wrong distance.
       setText(el.prompt, 'Assuming ±360° until this wheel is calibrated. Click Calibrate to learn how far it really turns.');
       tone(el.prompt, 'warn');
     }
-    el.prompt.hidden = !busy && !result && !(w.connected && !w.rotationKnown);
+    el.prompt.hidden = !busy && !result && !held && !(w.connected && !w.rotationKnown);
     el.centre.disabled = !w.connected || !on;
     el.ret.disabled = !w.connected || !on;
     el.ret.title = !w.connected ? 'no wheel connected'
@@ -180,9 +194,19 @@ export class RimPanel {
     chip(el.base, w.baseConnected ? true : moza === 'busy' ? 'busy' : false);
     el.base.title = moza === 'busy' ? `${native.moza.holder ?? 'another program'} has the base's serial port` : '';
     chip(el.paddles, w.paddlesMapped);
+    // RIM: whether the motor knows a wheel is on the base. Off-guard is
+    // shown as a warning, not as a pass.
+    chip(el.rim, !w.drivable ? false : !w.rimGuard ? 'busy' : w.rim.state === 'present');
+    el.rim.title = !w.drivable ? 'this wheel is not motor-driven from here'
+      : !w.rimGuard ? 'the wheel-fitted check is OFF — the motor moves without one'
+        : w.rim.state === 'present'
+          ? `a wheel is fitted (${{ serial: 'the rim answered the base', button: 'a button was pressed on it', user: 'you said so' }[w.rim.via]})`
+          : 'no wheel shown to be fitted yet — the motor stays still; press any button on the wheel';
     el.paddles.title = w.paddlesMapped ? '' : 'not mapped yet — click Paddles';
   }
 }
+
+const RIM_PROMPT = 'No wheel detected on the base, so the motor will not move. Press any button on your wheel to show it is fitted — or, if it is, click A wheel is fitted.';
 
 const signed = (d) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(0)}°`;
 

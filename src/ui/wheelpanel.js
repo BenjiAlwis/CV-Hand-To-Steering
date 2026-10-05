@@ -53,7 +53,7 @@ export class WheelPanel {
 
     this.el.map.addEventListener('click', () => wheel.startWizard());
     this.el.skip.addEventListener('click', () => wheel.skipStep());
-    this.el.cancel.addEventListener('click', () => wheel.cancelWizard());
+    this.el.cancel.addEventListener('click', () => (wheel.rimCheck ? wheel.cancelRimCheck() : wheel.cancelWizard()));
     this.el.centre.addEventListener('click', () => wheel.calibrateCentre());
     this.el.reset.addEventListener('click', () => wheel.resetMapping());
 
@@ -132,10 +132,14 @@ export class WheelPanel {
 
 
     const wizard = w.wizard;
-    el.prompt.hidden = !wizard;
-    el.skip.hidden = el.cancel.hidden = !wizard;
-    el.map.hidden = el.centre.hidden = el.reset.hidden = !!wizard;
-    if (wizard) {
+    const checking = w.rimCheck;
+    el.prompt.hidden = !wizard && !checking;
+    el.skip.hidden = !wizard;
+    el.cancel.hidden = !wizard && !checking;
+    el.map.hidden = el.centre.hidden = el.reset.hidden = !!(wizard || checking);
+    if (checking) {
+      setText(el.prompt, 'No wheel detected on the base, so the motor will not move. Press any button on your wheel — or use A wheel is fitted on the WHEEL BASE panel.');
+    } else if (wizard) {
       const n = Math.min(wizard.step + 1, wizard.steps.length);
       setText(el.prompt, wizard.listening
         ? `${n}/${wizard.steps.length} · ${wizard.current.prompt}`

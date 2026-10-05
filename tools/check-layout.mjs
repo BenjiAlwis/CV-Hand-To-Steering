@@ -27,11 +27,16 @@ function checkTeam(id) {
   const items = [
     ...spec.buttons.map((b) => ({
       id: b.id, x: b.x, y: b.y, r: b.radius * POCKET,
+      // A button with no legend printed beside it has nothing to check there.
+      noLabel: b.labelSide === 'none' || b.labelSide === 'cap',
       labelY: b.y + (b.labelSide === 'above' ? LABEL_DROP : -LABEL_DROP),
-      labelHalfW: (b.label.length * CHAR_W.button) / 2,
+      labelHalfW: b.labelSide === 'none' || b.labelSide === 'cap' ? 0 : (b.label.length * CHAR_W.button) / 2,
     })),
     ...spec.rotaries.map((r) => ({
       id: r.id, x: r.x, y: r.y, r: r.scale,
+      // A collar rotary carries its name on its own knob; a printed dial
+      // (Ferrari) has its name printed as artwork of its own.
+      noLabel: !!r.collar || !!r.band,
       labelY: r.y - r.scale - 0.0026,
       labelHalfW: (r.label.length * CHAR_W.rotary) / 2,
     })),
@@ -40,6 +45,19 @@ function checkTeam(id) {
   const gripInnerX = grip.centreX - grip.halfWidth;
   const behindGrip = (y) => y < grip.topY && y > grip.bottomY;
   const barBottom = lightBar.y - lightBar.height / 2;
+  // The display housing: its glass plus margins, and a wider upper part
+  // where a team's housing has one (Red Bull's, round the shift lights).
+  const dispTop = screen.y + screen.height / 2 + screen.bezelTop;
+  const dispBottom = screen.y - screen.height / 2 - screen.bezelBottom;
+  const upper = screen.module?.upper;
+  // A housing that carries fittings (Ferrari's display block) only keeps
+  // them off its glass.
+  const fit = screen.module?.carriesFittings;
+  const onDisplay = fit
+    ? (x, y, r) => Math.abs(x) - r < screen.width / 2 + 0.002 && Math.abs(y - screen.y) - r < screen.height / 2 + 0.002
+    : (x, y, r) =>
+    (Math.abs(x) - r < screen.width / 2 + screen.bezel && y > dispBottom && y < dispTop) ||
+    (upper && Math.abs(x) - r < upper.halfWidth && y > upper.bottom && y < dispTop);
 
   for (const a of items) {
     if (!discFits(outline, a.x, a.y, a.r + EDGE_MARGIN)) {
@@ -48,20 +66,19 @@ function checkTeam(id) {
         : 'centre is off the shell entirely';
       flag(`${a.id}: does not fit on the carbon — ${d}`);
     }
-    if (!isInside(outline, a.x, a.labelY - LABEL_HALF_H) ||
+    if (!a.noLabel && (!isInside(outline, a.x, a.labelY - LABEL_HALF_H) ||
         !isInside(outline, a.x - a.labelHalfW, a.labelY) ||
-        !isInside(outline, a.x + a.labelHalfW, a.labelY)) {
+        !isInside(outline, a.x + a.labelHalfW, a.labelY))) {
       flag(`${a.id}: legend runs off the shell`);
     }
     if (Math.abs(a.x) + a.r > gripInnerX && behindGrip(a.y)) flag(`${a.id}: pocket falls behind a grip`);
-    if (Math.abs(a.x) + a.labelHalfW > gripInnerX && behindGrip(a.labelY)) flag(`${a.id}: legend falls behind a grip`);
-    if (a.y + a.r > barBottom) flag(`${a.id}: pocket runs into the rev-light bar`);
-    if (Math.abs(a.x) - a.r < screen.width / 2 + screen.bezel &&
-        Math.abs(a.y - screen.y) < screen.height / 2 + screen.bezel) flag(`${a.id}: overlaps the display`);
+    if (!a.noLabel && Math.abs(a.x) + a.labelHalfW > gripInnerX && behindGrip(a.labelY)) flag(`${a.id}: legend falls behind a grip`);
+    // A bar inside the display module is covered by the display's own check.
+    if (!lightBar.inScreen && a.y + a.r > barBottom) flag(`${a.id}: pocket runs into the rev-light bar`);
+    if (onDisplay(a.x, a.y, a.r)) flag(`${a.id}: overlaps the display`);
     // A legend printed over the display is just as wrong as a pocket there.
-    if (Math.abs(a.x) - a.labelHalfW < screen.width / 2 + screen.bezel &&
-        Math.abs(a.labelY) - LABEL_HALF_H < screen.y + screen.height / 2 + screen.bezel &&
-        a.labelY + LABEL_HALF_H > screen.y - screen.height / 2 - screen.bezel) {
+    if (!a.noLabel && !fit && Math.abs(a.x) - a.labelHalfW < screen.width / 2 + screen.bezel &&
+        a.labelY - LABEL_HALF_H < dispTop && a.labelY + LABEL_HALF_H > dispBottom) {
       flag(`${a.id}: legend is printed over the display`);
     }
   }
@@ -70,17 +87,18 @@ function checkTeam(id) {
     for (let j = i + 1; j < items.length; j++) {
       const a = items[i], b = items[j];
       if (Math.hypot(a.x - b.x, a.y - b.y) < a.r + b.r) flag(`${a.id} / ${b.id}: pockets overlap`);
-      if (Math.abs(a.x - b.x) < a.labelHalfW + b.r &&
+      if (!a.noLabel && Math.abs(a.x - b.x) < a.labelHalfW + b.r &&
           Math.abs(a.labelY - b.y) < LABEL_HALF_H + b.r) flag(`${a.id}: legend lands on ${b.id}'s pocket`);
-      if (Math.abs(a.x - b.x) < a.labelHalfW + b.labelHalfW &&
+      if (!a.noLabel && !b.noLabel && Math.abs(a.x - b.x) < a.labelHalfW + b.labelHalfW &&
           Math.abs(a.labelY - b.labelY) < LABEL_HALF_H * 2) flag(`${a.id} / ${b.id}: legends collide`);
     }
   }
 
   // The display and the light bar have to sit on carbon too.
   for (const [label, box] of [
-    ['display', { x: screen.x, y: screen.y, hw: screen.width / 2 + screen.bezel, hh: screen.height / 2 + screen.bezel }],
-    ['light bar', { x: 0, y: lightBar.y, hw: lightBar.width / 2, hh: lightBar.height / 2 }],
+    ['display', { x: screen.x, y: (dispTop + dispBottom) / 2, hw: screen.width / 2 + screen.bezel, hh: (dispTop - dispBottom) / 2 }],
+    ...(upper ? [['display housing', { x: 0, y: (dispTop + upper.bottom) / 2, hw: upper.halfWidth, hh: (dispTop - upper.bottom) / 2 }]] : []),
+    ...(lightBar.inScreen ? [] : [['light bar', { x: 0, y: lightBar.y, hw: lightBar.width / 2, hh: lightBar.height / 2 }]]),
   ]) {
     for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       if (!isInside(outline, box.x + dx * box.hw, box.y + dy * box.hh)) {
@@ -90,9 +108,37 @@ function checkTeam(id) {
     }
   }
 
+  // A bar inside the display module has to sit inside its glass.
+  if (lightBar.inScreen) {
+    const top = dispTop;
+    if (lightBar.y + lightBar.height / 2 > top) flag('light bar: rises out of the display module');
+    if (lightBar.width / 2 > Math.max(screen.width / 2 + screen.bezel, upper?.halfWidth ?? 0)) flag('light bar: wider than the display module');
+  }
+
+  // Thumb rollers are let into the carbon: their centres must be on it, and
+  // they must not sit on a button or rotary.
+  for (const t of spec.rollers ?? []) {
+    if (!isInside(outline, t.x, t.y)) flag(`${t.id}: roller is off the carbon`);
+    // A drum's footprint on the face is a rectangle: its length along the
+    // axle, its diameter across it.
+    const ang = ((t.axis ?? 0) * Math.PI) / 180;
+    for (const a of items) {
+      const dx = a.x - t.x, dy = a.y - t.y;
+      const u = Math.abs(dx * Math.cos(ang) + dy * Math.sin(ang)) - t.length / 2;
+      const v = Math.abs(-dx * Math.sin(ang) + dy * Math.cos(ang)) - t.radius;
+      const d = Math.hypot(Math.max(u, 0), Math.max(v, 0)) + Math.min(Math.max(u, v), 0);
+      if (d < a.r * 0.9) flag(`${t.id}: roller sits on ${a.id}`);
+    }
+  }
+
   // The whole grip footprint has to land on carbon, not just its centreline —
-  // the outer edge at the bottom is where it actually runs off the leg.
-  for (const side of [-1, 1]) {
+  // the outer edge at the bottom is where it actually runs off the leg. A
+  // grip hung beside the body instead (Mercedes) has to be joined to it.
+  if (grip.detached) {
+    const inner = grip.centreX - grip.halfWidth;
+    if (!(grip.bridges ?? []).length && !grip.joined) flag('detached grips have no bridges to the body');
+    if (inner - maxXAt(outline, grip.topY + 0.004) > 0.002) flag('detached grip top does not reach under the body');
+  } else for (const side of [-1, 1]) {
     for (const [name, y] of [['top', grip.topY], ['bottom', grip.bottomY]]) {
       for (const [edge, dx] of [['inner', -grip.halfWidth], ['centre', 0], ['outer', grip.halfWidth]]) {
         const x = side * grip.centreX + side * dx;

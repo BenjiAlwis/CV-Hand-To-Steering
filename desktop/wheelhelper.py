@@ -265,6 +265,9 @@ class Joystick:
 MOZA_START = 0x7E
 MOZA_MAGIC = 13          # added into every checksum; see Boxflat's moza-protocol.md
 MOZA_BASE = 19
+# A wheel fitted to the base answers on one of these, to reads in group 64.
+RIM_DEVICES = (23, 21)
+RIM_READ = 64
 
 # name: (read group, write group, command id, payload bytes, to device, from device)
 MOZA_COMMANDS = {
@@ -478,6 +481,52 @@ class MozaBase:
             os.close(fd)
         return sorted(got)
 
+    def probe_rim(self, rounds=4):
+        """
+        Asks whether a wheel is fitted to the base, read-only: the rim answers
+        on its own device id (23, or 21 on older rims) when it is there, as
+        Boxflat finds it. True if one answered, False if none did, None if
+        there is no port to ask. Some rims (Moza's ES among them) do not
+        answer at all, so False means "not confirmed", never "safe".
+        """
+        path = self._path()
+        if path is None:
+            return None
+        own = self.fd is not None
+        try:
+            fd = self.fd if own else os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        except OSError:
+            return None
+        # Reads only: telemetry mode and paddle mode, both group 64.
+        asks = [moza_message(RIM_READ, dev, cid, (1).to_bytes(1, 'big'))
+                for dev in RIM_DEVICES for cid in ([28, 0], [3])]
+        replies = {((d & 0x0F) << 4) | (d >> 4) for d in RIM_DEVICES}
+        found = False
+        buffer = b''
+        try:
+            for _ in range(rounds):
+                for msg in asks:
+                    os.write(fd, msg)
+                end = time.monotonic() + 0.08
+                while time.monotonic() < end:
+                    if select.select([fd], [], [], 0.01)[0]:
+                        try:
+                            buffer += os.read(fd, 512)
+                        except BlockingIOError:
+                            pass
+                frames, buffer = parse_frames(buffer)
+                if any(f[2] & 0x7F == RIM_READ and f[3] in replies for f in frames):
+                    found = True
+                    break
+                # Anything else that came back is still the base's news.
+                decode_frames(frames, self.values)
+        except OSError:
+            pass
+        finally:
+            if not own:
+                os.close(fd)
+        return found
+
     def _path(self):
         paths = sorted(p for p in glob.glob('/dev/serial/by-id/*') if 'gudsen' in p.lower() or 'moza' in p.lower())
         return next((p for p in paths if p.endswith('-if00')), paths[0] if paths else None)
@@ -564,6 +613,8 @@ def main():
             else:
                 for name in names:
                     moza.request(name)
+        elif op == 'rim-probe':
+            emit({'t': 'rim', 'present': moza.probe_rim()})
         elif op == 'moza-write':
             name, value = msg.get('name'), msg.get('value')
             if name == 'rotation':

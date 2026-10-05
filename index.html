@@ -95,6 +95,7 @@
           <span id="rimChipFfb" data-on="false">FORCE</span>
           <span id="rimChipBase" data-on="false">BASE</span>
           <span id="rimChipPaddles" data-on="false">PADDLES</span>
+          <span id="rimChipRim" data-on="false">RIM</span>
         </div>
         <p class="pedalset-prompt" id="rimPrompt" hidden></p>
         <div class="cam-buttons">
@@ -104,6 +105,7 @@
           <button id="rimCentre" type="button">Calibrate</button>
           <button id="rimSetup" type="button">Set up</button>
           <button id="rimSkip" type="button" hidden>Skip</button>
+          <button id="rimFitted" type="button" hidden>A wheel is fitted</button>
           <button id="rimCancel" type="button" hidden>Cancel</button>
         </div>
       </div>
@@ -267,6 +269,17 @@
         </div>
 
         <div class="set-group">
+          <div class="set-group-name">GRAPHICS</div>
+          <div class="set-cam-row"><label for="setGraphics">Quality</label><select id="setGraphics">
+            <option value="low">Low — fastest</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="ultra">Ultra — everything on</option>
+          </select></div>
+          <p class="set-note">The hand and foot tracking run on the same graphics card. If tracking feels slow, lower this first.</p>
+        </div>
+
+        <div class="set-group">
           <div class="set-group-name">DRIVING AIDS</div>
           <p class="set-note aids-note">All off each time the rig starts: the car only moves when you drive it.</p>
           <label class="set-row">
@@ -311,6 +324,10 @@
             <label class="set-row wheel-force">
               <input type="checkbox" id="setWheelForce">
               <span><b>Turn the rim to match the rig</b><em>When the rig is steered by anything else — a drag, the keys, your hands on camera — the motor turns the real wheel to match. Turn the rim yourself and it lets go and follows you. Needs the desktop app on Linux and a wheel with force feedback.</em></span>
+            </label>
+            <label class="set-row wheel-guard">
+              <input type="checkbox" id="setRimGuard">
+              <span><b>Only move the motor with a wheel fitted</b><em>Centre, Calibrate and turning the rim to match the rig wait until a wheel is shown to be on the base — a press of any of its buttons, the rim answering the base (Moza rims that can), or your word for it. And if the rotor ever spins far faster than it is being driven, the motor lets go at once. On every time the rig starts.</em></span>
             </label>
             <div class="set-cam-row wheel-strength"><label for="wheelStrength">Force</label><input type="range" id="wheelStrength" min="0.05" max="1" step="0.05"><b id="wheelStrengthValue">30%</b></div>
             <div class="wheel-base" id="wheelBase" hidden>
@@ -394,11 +411,16 @@
       window.addEventListener('unhandledrejection', function (event) {
         fail(String(event.reason && event.reason.message || event.reason));
       });
-      // Nothing should take this long, so if it does, say so rather than
-      // leaving the progress bar sweeping forever.
-      window.__wheelhouseWatchdog = setTimeout(function () {
-        fail('startup stalled — check the console (View → Developer Tools)');
-      }, 25000);
+      // No single startup step should take this long, so if one does, say so
+      // rather than leaving the progress bar sweeping forever. Re-armed at
+      // each step: a slow machine working through the steps is not stalled.
+      window.__wheelhouseArm = function () {
+        clearTimeout(window.__wheelhouseWatchdog);
+        window.__wheelhouseWatchdog = setTimeout(function () {
+          fail('startup stalled — check the console (View → Developer Tools)');
+        }, 45000);
+      };
+      window.__wheelhouseArm();
     })();
   </script>
   <script type="module" src="./src/main.js"></script>

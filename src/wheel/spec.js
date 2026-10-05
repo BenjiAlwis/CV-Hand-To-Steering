@@ -55,14 +55,22 @@ export function buildSpec(teamId = DEFAULT_TEAM) {
     name: team.name,
     // Composed from the measured outline rather than written by hand, so the
     // quoted width cannot drift away from the shape it describes.
-    subtitle: `${team.tagline.split(' · ')[0]} · ${(shell.width * 1000).toFixed(0)} mm · ${team.tagline.split(' · ').slice(1).join(' · ')}`,
+    // Grips hung beside the body (Mercedes) are part of the wheel's width.
+    subtitle: `${team.tagline.split(' · ')[0]} · ${((team.grip.detached ? Math.max(halfWidth, team.grip.centreX + team.grip.halfWidth) * 2 : shell.width) * 1000).toFixed(0)} mm · ${team.tagline.split(' · ').slice(1).join(' · ')}`,
     livery: team.livery,
     shell,
-    screen: team.screen,
+    // A housing deeper above or below the glass than beside it gives its own
+    // top and bottom margins.
+    screen: { bezelTop: team.screen.bezel, bezelBottom: team.screen.bezel, ...team.screen },
     lightBar: team.lightBar,
     leds: buildLeds(team.lightBar),
     buttons: team.buttons,
     rotaries: team.rotaries,
+    rollers: team.rollers ?? [],
+    pods: team.pods ?? [],
+    indicators: team.indicators ?? [],
+    toggles: team.toggles ?? [],
+    tabs: team.tabs ?? [],
     grip: team.grip,
     paddles: buildPaddles(shell, team),
     artwork: team.artwork,
@@ -72,6 +80,7 @@ export function buildSpec(teamId = DEFAULT_TEAM) {
       team.rotaries.length +
       countSided(team.grip.thumbRotaries) +
       countSided(team.grip.thumbButtons) +
+      (team.rollers ?? []).length +
       4,                                    // the paddles
   };
 }
@@ -84,6 +93,25 @@ const countSided = (list) => list.reduce((n, c) => n + (c.side === 0 ? 2 : 1), 0
  * sequence drivers shift on.
  */
 function buildLeds(bar) {
+  // Inside a display module — the Mercedes — the fifteen run the width of
+  // the glass above the screen, and the flags stand in short vertical stacks
+  // either side of it rather than at the ends of a bar.
+  if (bar.flags === 'stacked') {
+    const out = [];
+    const n = 15;
+    const span = bar.width / 2 - bar.width / (n * 2);
+    const seq = bar.sequence ?? ['green', 'red', 'blue'];
+    for (let i = 0; i < n; i++) {
+      out.push({
+        x: -span + (i / (n - 1)) * span * 2, y: bar.y, kind: 'rev', index: i,
+        colour: seq[Math.min(2, Math.floor(i / 5))], threshold: (i + 1) / (n + 1),
+      });
+    }
+    for (const [side, sx] of [['left', -1], ['right', 1]]) {
+      for (const y of bar.flagYs) out.push({ x: sx * bar.flagX, y, kind: 'flag', side });
+    }
+    return out;
+  }
   const out = [];
   // Spread across the bar rather than clustering centrally, otherwise the
   // strip reads as mostly empty housing with a few lights in the middle.

@@ -29,31 +29,38 @@ export class RevLights {
     this.group = new THREE.Group();
     this.leds = [];
 
-    const z = shell.frontZ;
+    // Raised with the display module when the bar sits inside it.
+    const z = shell.frontZ + (LIGHT_BAR.z ?? 0);
 
     // LED dies, recessed just behind the lens.
     // Sized off the bar so a smaller team wheel gets proportionally
     // smaller dies rather than a crowded strip.
     const pitch = LIGHT_BAR.width / 32;
-    const dieGeo = plateGeometry(pitch * 0.82, LIGHT_BAR.height * 0.50, pitch * 0.16, 0.0008);
+    // Round diffusers of a given size (Ferrari's), or dies sized off the bar.
+    const d = LIGHT_BAR.ledSize;
+    const dieGeo = d
+      ? plateGeometry(d, d, d / 2, 0.0008)
+      : plateGeometry(pitch * 0.82, LIGHT_BAR.height * 0.50, pitch * 0.16, 0.0008);
     this._disposables = [dieGeo];
+    // Opal diffusers read pale when unlit; tinted dies read dark grey.
+    this.dark = LIGHT_BAR.unlit ? new THREE.Color(LIGHT_BAR.unlit) : DARK.clone();
 
     for (const def of LEDS) {
       const base = def.kind === 'rev' ? HUE[def.colour] : HUE.yellow;
-      const material = new THREE.MeshBasicMaterial({ color: DARK.clone(), toneMapped: false });
+      const material = new THREE.MeshBasicMaterial({ color: this.dark.clone(), toneMapped: false });
       const mesh = new THREE.Mesh(dieGeo, material);
-      mesh.position.set(def.x, LIGHT_BAR.y, z + 0.0009);
+      mesh.position.set(def.x, def.y ?? LIGHT_BAR.y, z + 0.0009);
       this.group.add(mesh);
       this.leds.push({ def, material, base: base.clone(), mesh });
     }
 
     // Smoked lens over the whole bar.
-    const lensGeo = plateGeometry(LIGHT_BAR.width, LIGHT_BAR.height, LIGHT_BAR.radius, 0.0022);
+    const lensGeo = plateGeometry(LIGHT_BAR.width, LIGHT_BAR.height, LIGHT_BAR.radius, LIGHT_BAR.flags === 'stacked' ? 0.0008 : 0.0022);
     this._disposables.push(lensGeo);
     const lens = new THREE.Mesh(lensGeo, materials.lens);
     lens.position.set(0, LIGHT_BAR.y, z + 0.0024);
     lens.renderOrder = 2;
-    this.group.add(lens);
+    if (LIGHT_BAR.lens !== false) this.group.add(lens);
 
     // A single light bleeds the bar's colour onto the shell below it.
     this.bleed = new THREE.PointLight(0xffffff, 0, 0.16, 2);
@@ -85,11 +92,11 @@ export class RevLights {
           material.color.copy(base).multiplyScalar(2.9);
           hot += 1;
         } else {
-          material.color.copy(DARK);
+          material.color.copy(this.dark);
         }
       } else {
         if (flag === 'none') {
-          material.color.copy(DARK);
+          material.color.copy(this.dark);
         } else {
           const pulse = 0.55 + 0.45 * Math.sin(this._t * 12);
           const hue = flag === 'yellow' ? HUE.yellow : flag === 'blue' ? HUE.blue : HUE.red;

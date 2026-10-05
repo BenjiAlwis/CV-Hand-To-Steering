@@ -62,6 +62,7 @@ const STEPS = 5;
 const PIP_STAGGER_MS = 34;
 let stepsDone = 0;
 const step = async (message) => {
+  window.__wheelhouseArm?.();
   bootMsg.textContent = message;
   stepsDone += 1;
   const lit = Math.round((stepsDone / STEPS) * bootPips.length);
@@ -79,6 +80,12 @@ async function main() {
 
   await step('lighting the bay…');
   const environment = new Environment(app.renderer, app.scene);
+  // Graphics quality, from settings, applied before the first frame.
+  const graphicsAtStart = (() => {
+    try { return JSON.parse(localStorage.getItem('wheelhouse.settings') ?? '{}').graphics; } catch { return null; }
+  })() ?? 'high';
+  app.setQuality(graphicsAtStart);
+  environment.setQuality(graphicsAtStart);
 
   await step('weaving carbon…');
   // The procedural source textures are the slow part and do not depend on
@@ -197,6 +204,7 @@ async function main() {
   wheelSource.enabled = settings.get('wheel');
   wheelSource.force.enabled = settings.get('wheelForce');
   wheelSource.force.strength = settings.get('wheelStrength');
+  wheelSource.rimGuard = settings.get('rimGuard');
   // A hidden window stops drawing frames, so it would stop updating the
   // spring too — let go of the rim rather than leave it held somewhere.
   document.addEventListener('visibilitychange', () => { if (document.hidden) wheelSource.drive(null); });
@@ -354,10 +362,16 @@ async function main() {
   // Acting on a changed setting, rather than only remembering it.
   settings.onChange((key, value) => {
     if (key === 'flaps') shifter.enabled = value && !handsPaused;
+    if (key === 'graphics') { app.setQuality(value); environment.setQuality(value); }
     if (['autoGears', 'autoThrottle', 'autoBrake', 'queueDown', 'traction', 'abs'].includes(key)) syncAssists();
     if (key === 'wheel') wheelSource.enabled = value;
     if (key === 'wheelForce') wheelSource.force.enabled = value;
     if (key === 'wheelStrength') wheelSource.force.strength = value;
+    if (key === 'rimGuard') {
+      wheelSource.rimGuard = value;
+      toast.show(value ? 'Wheel-fitted check on: the motor only moves with a wheel on the base'
+        : 'Wheel-fitted check OFF — the motor will move with nothing fitted. Back on next launch.');
+    }
     if (key === 'pedalSet') pedalSet.enabled = value;
     if (key === 'boxes') { camera.setBoxes(value); syncBoxDetector(); }
     if (key === 'gloves') {
@@ -522,7 +536,7 @@ async function main() {
     hud.update(dt, {
       controller,
       renderer: app.renderer,
-      cameraName: app.freeCamera ? 'free' : app.view.name,
+      cameraName: app.freeCamera ? 'free' : (app.view.label ?? app.view.name),
       lockKnown: !(wheelSource.connected && wheelSource.enabled) || wheelSource.rotationKnown,
     });
   });
@@ -629,6 +643,8 @@ function bindKeys(app, controller, hud, cycleTeam, vision) {
       case 'Digit1': app.setView(VIEWS.driver); if (app.freeCamera) app.toggleFreeCamera(); break;
       case 'Digit2': app.setView(VIEWS.quarter); if (app.freeCamera) app.toggleFreeCamera(); break;
       case 'Digit3': app.setView(VIEWS.detail); if (app.freeCamera) app.toggleFreeCamera(); break;
+      case 'Digit4': app.setView(VIEWS.rearQuarter); if (app.freeCamera) app.toggleFreeCamera(); break;
+      case 'Digit5': app.setView(VIEWS.rearLow); if (app.freeCamera) app.toggleFreeCamera(); break;
       default: return;
     }
   });

@@ -14,7 +14,7 @@ const STORE_KEY = 'wheelhouse.settings';
  * that drives off by itself the moment the rig opens is a surprise, so the
  * driving aids are switched on per session, never remembered.
  */
-export const SESSION_ONLY = ['autoGears', 'autoThrottle', 'autoBrake', 'queueDown', 'traction', 'abs'];
+export const SESSION_ONLY = ['autoGears', 'autoThrottle', 'autoBrake', 'queueDown', 'traction', 'abs', 'rimGuard'];
 
 export const DEFAULTS = {
   /** Gear flaps pulled with a finger. */
@@ -30,6 +30,12 @@ export const DEFAULTS = {
   /** Let the rig turn a force-feedback rim to match it, and how hard. */
   wheelForce: true,
   wheelStrength: 0.3,
+  /**
+   * The motor only turns a base with a wheel shown to be fitted. Back on at
+   * every launch, however it was left: turning it off is a choice made for
+   * one session, never a setting that lingers.
+   */
+  rimGuard: true,
   /** Drive the car with pedals plugged into the machine, whenever they are found. */
   pedalSet: true,
   /** The automatic gearbox. */
@@ -44,6 +50,8 @@ export const DEFAULTS = {
   traction: false,
   /** Never lets the tyres lock under braking. Not allowed in F1. */
   abs: false,
+  /** Graphics quality: low, medium, high or ultra. */
+  graphics: 'high',
   /**
    * Panels the driver has rolled up. Camera panels keep tracking while rolled.
    * The key list starts rolled up: it is reference, not something to watch.
